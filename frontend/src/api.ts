@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { File } from "expo-file-system";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -44,38 +45,27 @@ export const api = {
     return handle(res);
   },
   async uploadMedia(uri: string, mediaType: "image" | "video", privacy: string) {
-    if (!BASE) throw new Error("Backend URL not set. Rebuild with EXPO_PUBLIC_BACKEND_URL.");
     const form = new FormData();
-    // Strip any query/hash and fall back to a safe name with the right extension.
-    const clean = uri.split("?")[0].split("#")[0];
-    let name = clean.split("/").pop() || "";
-    if (!name || !name.includes(".")) name = mediaType === "image" ? "photo.jpg" : "video.mp4";
-    const type = mediaType === "image" ? "image/jpeg" : "video/mp4";
+    const name = uri.split("/").pop() || (mediaType === "image" ? "photo.jpg" : "video.mp4");
     if (Platform.OS === "web") {
       const blob = await (await fetch(uri)).blob();
       form.append("file", blob, name);
     } else {
-      form.append("file", { uri, name, type } as any);
+      // Expo SDK 57's global fetch (expo/fetch) only accepts a string, a Blob,
+      // or an object exposing bytes() as a FormData part — it no longer reads
+      // React Native's legacy { uri, name, type } shape (throws "Unsupported
+      // FormDataPart implementation" before the request ever leaves the device).
+      // expo-file-system's File implements the Blob interface, so it works here.
+      const fileObj = new File(uri);
+      form.append("file", fileObj, name);
     }
     form.append("media_type", mediaType);
     form.append("privacy", privacy);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
-    let res: Response;
-    try {
-      res = await fetch(`${BASE}/api/messages/media`, {
-        method: "POST",
-        headers: headers(), // never set Content-Type for multipart
-        body: form,
-        signal: controller.signal,
-      });
-    } catch (e: any) {
-      if (e?.name === "AbortError") throw new Error("Upload timed out. Check your connection and try again.");
-      throw new Error(`Upload failed to reach the server (${e?.message || "network error"}).`);
-    } finally {
-      clearTimeout(timer);
-    }
+    const res = await fetch(`${BASE}/api/messages/media`, {
+      method: "POST",
+      headers: headers(), // never set Content-Type for multipart
+      body: form,
+    });
     return handle(res);
   },
 };
