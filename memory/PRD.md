@@ -44,3 +44,14 @@ messages(text/media, privacy, consumed), moods(per user per UK date), worries, c
 ## Backlog / next
 - P1: Push works only after deploy + native build with the user's own google-services.json.
 - P2: Consider splitting server.py into routers; optional "sign out" confirmation.
+
+## Media send investigation (2026-09-19)
+- User reported "could not send media" in their built APK (gallery opens, pick, then fails).
+- Verified NOT a server issue: production backend https://couples-space-api.emergent.host
+  accepts text + media multipart uploads up to 25MB (curl), storage + /files download OK.
+- Root cause is on-device; old chat.tsx swallowed the real error behind a generic toast.
+- Fix: src/api.ts uploadMedia now adds a 60s AbortController timeout, sanitizes filename,
+  guards missing EXPO_PUBLIC_BACKEND_URL, and throws readable errors; chat.tsx surfaces
+  e.message in both gallery-pick and camera-capture catch blocks. 18/18 backend tests pass.
+- Awaiting on-device toast text (Expo Go vs new APK) to pinpoint the exact device-side cause.
+

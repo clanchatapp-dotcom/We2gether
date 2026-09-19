@@ -55,10 +55,20 @@ def init_storage():
 
 
 def put_object(path: str, data: bytes, content_type: str) -> dict:
+    global storage_key
     key = init_storage()
     resp = requests.put(f"{STORAGE_URL}/objects/{path}",
                         headers={"X-Storage-Key": key, "Content-Type": content_type},
                         data=data, timeout=120)
+    # The cached storage_key can expire/rotate on the storage service side.
+    # When that happens the write is rejected; reset the key, re-init and retry
+    # once (mirrors get_object so uploads self-heal without a backend restart).
+    if resp.status_code in (401, 403, 503):
+        storage_key = None
+        key = init_storage()
+        resp = requests.put(f"{STORAGE_URL}/objects/{path}",
+                            headers={"X-Storage-Key": key, "Content-Type": content_type},
+                            data=data, timeout=120)
     resp.raise_for_status()
     return resp.json()
 
@@ -68,7 +78,7 @@ def get_object(path: str):
     key = init_storage()
     resp = requests.get(f"{STORAGE_URL}/objects/{path}",
                         headers={"X-Storage-Key": key}, timeout=60)
-    if resp.status_code == 503:
+    if resp.status_code in (401, 403, 503):
         storage_key = None
         key = init_storage()
         resp = requests.get(f"{STORAGE_URL}/objects/{path}",
@@ -355,7 +365,11 @@ async def send_media(
         ext = "jpg" if media_type == "image" else "mp4"
     path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
     content_type = file.content_type or ("image/jpeg" if media_type == "image" else "video/mp4")
-    await run_in_threadpool(put_object, path, data, content_type)
+    try:
+        await run_in_threadpool(put_object, path, data, content_type)
+    except Exception as e:
+        logger.error(f"Media upload failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not upload media right now. Please try again.")
     m = {
         "id": str(uuid.uuid4()),
         "couple_id": user["couple_id"],

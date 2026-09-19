@@ -44,8 +44,12 @@ export const api = {
     return handle(res);
   },
   async uploadMedia(uri: string, mediaType: "image" | "video", privacy: string) {
+    if (!BASE) throw new Error("Backend URL not set. Rebuild with EXPO_PUBLIC_BACKEND_URL.");
     const form = new FormData();
-    const name = uri.split("/").pop() || (mediaType === "image" ? "photo.jpg" : "video.mp4");
+    // Strip any query/hash and fall back to a safe name with the right extension.
+    const clean = uri.split("?")[0].split("#")[0];
+    let name = clean.split("/").pop() || "";
+    if (!name || !name.includes(".")) name = mediaType === "image" ? "photo.jpg" : "video.mp4";
     const type = mediaType === "image" ? "image/jpeg" : "video/mp4";
     if (Platform.OS === "web") {
       const blob = await (await fetch(uri)).blob();
@@ -55,11 +59,23 @@ export const api = {
     }
     form.append("media_type", mediaType);
     form.append("privacy", privacy);
-    const res = await fetch(`${BASE}/api/messages/media`, {
-      method: "POST",
-      headers: headers(), // never set Content-Type for multipart
-      body: form,
-    });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/api/messages/media`, {
+        method: "POST",
+        headers: headers(), // never set Content-Type for multipart
+        body: form,
+        signal: controller.signal,
+      });
+    } catch (e: any) {
+      if (e?.name === "AbortError") throw new Error("Upload timed out. Check your connection and try again.");
+      throw new Error(`Upload failed to reach the server (${e?.message || "network error"}).`);
+    } finally {
+      clearTimeout(timer);
+    }
     return handle(res);
   },
 };

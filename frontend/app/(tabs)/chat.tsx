@@ -117,8 +117,8 @@ export default function Chat() {
         setPrivacy("none");
         qc.invalidateQueries({ queryKey: ["messages"] });
         qc.invalidateQueries({ queryKey: ["gallery"] });
-      } catch {
-        toast.show("Could not send media");
+      } catch (e: any) {
+        toast.show(e?.message || "Could not send media");
       } finally {
         setSending(false);
       }
@@ -154,8 +154,8 @@ export default function Chat() {
         setPrivacy("none");
         qc.invalidateQueries({ queryKey: ["messages"] });
         qc.invalidateQueries({ queryKey: ["gallery"] });
-      } catch {
-        toast.show("Could not send media");
+      } catch (e: any) {
+        toast.show(e?.message || "Could not send media");
       } finally {
         setSending(false);
       }

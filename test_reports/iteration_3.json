@@ -1,0 +1,31 @@
+{
+  "summary": "Backend-only run to validate the put_object() stale-storage-key self-heal fix in server.py and confirm all previously passing flows still work. Results: 23/23 pytest tests PASSED (18 existing HTTP integration tests + 5 NEW monkeypatched unit tests for put_object). The new unit tests mock server.requests.put/post to prove: (1) on 503 the cached storage_key is reset, /init is called exactly once, and PUT is retried exactly once with the fresh key; (2) happy-path 200 makes ZERO extra calls (no needless re-init); (3) parametrized 401/403/503 all trigger the same self-heal path (the fix broadened get_object's 503-only retry set on the write path). Live end-to-end coverage against the public preview: POST /api/messages/media happy path returns a media message; it appears in GET /api/messages and GET /api/gallery; bytes round-trip via GET /api/files/{path} using BOTH X-User-Id header AND ?uid= query. one_time privacy flow verified: recipient 403 before open -> 200 on first fetch after /open -> 410 on second /open; sender always 410; item excluded from /gallery. Auth: POST /api/messages/media without X-User-Id returns 401; GET /api/files without auth returns 401. Regression endpoints (couples create/join/me, /messages/text, /moods, /worries+comments, /register-push, health) all pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_2gether_flows.py",
+    "/app/backend/tests/test_put_object_selfheal.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "None blocking. The stale-key self-heal on put_object() is verified end-to-end (mocked) and mirrors get_object()'s retry logic — media upload will now recover from a rotated storage_key without a backend restart, and the /messages/media endpoint returns a clean 502 with a user-friendly detail instead of a raw 500 if storage is truly down.",
+    "OPTIONAL cleanup (already flagged prior iterations): server.py uses deprecated @app.on_event('startup'/'shutdown'); migrate to FastAPI lifespan handlers. Non-blocking DeprecationWarning."
+  ],
+  "critical_code_review_comments": [
+    "server.py:57-73 put_object now correctly mirrors get_object's stale-key self-heal (401/403/503 -> reset key -> re-init -> retry once). The single-retry cap prevents infinite loops if the storage service is genuinely down.",
+    "server.py:368-372 wrapping put_object in try/except and mapping to 502 with a user-facing detail is the right call — clients (built APK) now get a retryable, human-readable error instead of an opaque 500.",
+    "server.storage_key is module-level global; that is fine for a single-process supervisor deployment, but if this ever runs multi-worker (gunicorn -w N) each worker will hold its own cache and self-heal independently. Currently non-issue but worth noting.",
+    "conftest.py adds /app/backend to sys.path so tests can `import server`. Clean and isolated to the tests folder."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_put_object_selfheal.py (NEW - 5 unit tests for put_object self-heal via monkeypatch)",
+    "/app/backend/tests/conftest.py (NEW - sys.path shim so `import server` works from pytest)"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "not tested (backend-only run per request)"},
+  "seed_data_creation": "TEST_Alex/TEST_Sam couple + associated media messages created via the live API. Preview DB is isolated; not cleaned up (matches prior iterations).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: `EXPO_PUBLIC_BACKEND_URL=<url> pytest /app/backend/tests/ -v`. New self-heal tests do NOT touch the network — they monkeypatch server.requests.put/post. Existing HTTP tests hit the real preview backend. conftest.py already handles sys.path. Ensure server.storage_key is not left mutated by unit tests interfering with subsequent runs (each test seeds/asserts its own value, so this is fine).",
+  "rca_of_issue": "Root cause (confirmed by prior iteration + this run): the cached module-level storage_key can be invalidated by the Emergent storage service (rotation/expiry). get_object() already self-healed on 401/403/503, but put_object() did not — so uploads returned raw 500 forever until backend restart, while reads eventually recovered. The APK could send text (no storage) but not media. Fix (server.py:57-73 + /api/messages/media try/except at 368-372): put_object mirrors get_object's retry, and the endpoint maps storage errors to 502 with a friendly detail. Verified via 5 monkeypatched unit tests (503 -> re-init -> 200 in exactly one retry; 401/403/503 all trigger the same path; happy path stays a single call) and the full live media suite (upload, gallery, download by header/query, one_time flow, auth)."
+}
