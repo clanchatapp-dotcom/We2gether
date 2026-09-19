@@ -1,0 +1,44 @@
+{
+  "summary": "Comprehensive backend + frontend testing of the 2gether app. Backend: 15/15 pytest tests passed against public EXPO_PUBLIC_BACKEND_URL (couples create/join/me, messages, moods, worries + comments, register-push validation & non-blocking failure). Frontend UI (mobile viewport 390x844): the user's original complaint (Invalid URL / cannot log in) is FIXED — onboarding loads, 'Create our space' successfully calls POST /api/couples/create, navigates into (tabs), invite-card shows the 6-char code (NVEUIK); Set-mood sheet opens; navigation to Chat/Gallery/Worries works; join-with-code flow (in a fresh storage) pairs the two users (invite-card disappears, partner name appears); session persists across page reload (SecureStore.g2g_user_id -> X-User-Id header); empty-name is rejected client-side with a toast. No React Native red screens or deprecated packages (no expo-av, expo-barcode-scanner, or expo-background-fetch).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Cold load on a deep route (e.g., /chat) after refresh",
+        "issue": "Two transient 401 responses on the very first render after reload: react-query fires /api/couples/me and /api/messages before AuthProvider's useEffect finishes reading SecureStore and calling setAuthUserId. The UI still recovers on the next tick (queries refetch on window focus / user tap), and the session IS persisted, but the 401s show in the console. Consider gating <Slot/> in the root _layout on `useAuth().ready` so children don't mount before X-User-Id is applied.",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Some RN internal (likely react-native-web animated / gesture-handler)",
+        "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking, but should be tracked."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_2gether_flows.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: In app/_layout.tsx, wait for useAuth().ready before rendering the routed screen tree to avoid the two 401 flashes on cold-load-to-deep-link after reload.",
+    "OPTIONAL: Track the 'props.pointerEvents is deprecated' RN warning (likely coming from a third-party lib; safe to ignore for now)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~620 lines and starting to mix routing + push + storage + models. Splitting into routers/ (couples, messages, moods, worries) + services/ (storage, push) would improve maintainability, though not blocking.",
+    "api.ts correctly uses process.env.EXPO_PUBLIC_BACKEND_URL and never hardcodes URLs — good.",
+    "Auth model has no rotation/expiry (X-User-Id is a raw UUID kept in SecureStore forever). Acceptable for this display-name-only design but worth calling out."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Backend tests create TEST_-prefixed couples/messages/worries/moods. UI test created two TEST_Play users paired via code NVEUIK. Not cleaned up (isolated preview DB).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All primary features working. If retesting, use EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env for the API base and mobile viewport 390x844 for the web preview. testIDs available on onboarding: mode-create, mode-join, name-input, code-input, onboarding-submit. On home: invite-card, couple-code, share-code-btn, set-mood-btn, mood-card-me, mood-card-partner, quick-chat, quick-gallery, quick-worries, sign-out-btn.",
+  "rca_of_issue": "Original user error 'Invalid URL: /api/couples/create' was a frontend BASE_URL misconfig in a previous workspace. In the ported repo, src/api.ts uses `process.env.EXPO_PUBLIC_BACKEND_URL + '/api' + path` and .env has EXPO_PUBLIC_BACKEND_URL set to the public preview host, so the URL now resolves correctly (verified: 200 on create + navigation into tabs)."
+}

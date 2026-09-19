@@ -1,0 +1,196 @@
+{
+  "app_name": "2gether",
+  "personality": "8 Hand-Drawn / Journal LIGHT (Blended with Soft Rose Palette)",
+  "personality_one_liner": "An intimate, cozy, and reflective space that feels like a shared digital journal, relying on soft blush tones and earthy off-whites to build emotional safety.",
+  "color": {
+    "surface": "#FDFBF7",
+    "onSurface": "#2C2623",
+    "surfaceSecondary": "#F5F0E6",
+    "onSurfaceSecondary": "#3D3531",
+    "surfaceTertiary": "#EFE8DB",
+    "onSurfaceTertiary": "#4F4540",
+    "surfaceInverse": "#2C2623",
+    "onSurfaceInverse": "#FDFBF7",
+    "brand": "#E29596",
+    "brandPrimary": "#D17B7D",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#EAB8B9",
+    "onBrandSecondary": "#4A2324",
+    "brandTertiary": "#F4DADA",
+    "onBrandTertiary": "#6B3335",
+    "success": "#879C81",
+    "onSuccess": "#FFFFFF",
+    "warning": "#E0AA77",
+    "onWarning": "#FFFFFF",
+    "error": "#C27367",
+    "onError": "#FFFFFF",
+    "info": "#8CA8B5",
+    "onInfo": "#FFFFFF",
+    "border": "#E8DFD3",
+    "borderStrong": "#D6C5B3",
+    "divider": "#E8DFD3",
+    "muted": "#8E8078",
+    "onBrand": "#4A2324",
+    "dark": {
+      "surface": "#1F1A18",
+      "onSurface": "#F4EFEA",
+      "surfaceSecondary": "#2A2320",
+      "onSurfaceSecondary": "#E8DFD3",
+      "surfaceTertiary": "#382E2A",
+      "onSurfaceTertiary": "#D6C5B3",
+      "surfaceInverse": "#FDFBF7",
+      "onSurfaceInverse": "#1F1A18",
+      "brand": "#C47476",
+      "brandPrimary": "#D17B7D",
+      "onBrandPrimary": "#FFFFFF",
+      "brandSecondary": "#B05C5E",
+      "onBrandSecondary": "#F4DADA",
+      "brandTertiary": "#4A2324",
+      "onBrandTertiary": "#EAB8B9",
+      "border": "#382E2A",
+      "borderStrong": "#4F4540",
+      "divider": "#382E2A",
+      "muted": "#A19288",
+      "onBrand": "#FFFFFF"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Fraunces",
+    "textFontFamily": "Nunito",
+    "accentFontFamily": "Caveat",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous, breathable spacing. Avoid dense layouts; let elements float comfortably to evoke a calming journal aesthetic.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "Feather",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [
+      "Use solid surface or tinted background colors to maintain the tactile, paper-like feel."
+    ],
+    "dont's": [
+      "No blur or glassmorphism. It conflicts with the Hand-Drawn/Journal earthy aesthetic."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "none",
+      "android": "none",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "none",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Onboarding",
+      "purpose": "Establish the intimate connection by letting the user set their name and enter a pairing code.",
+      "states": {
+        "loading": "Centered soft spinner matching brandPrimary",
+        "empty": "N/A",
+        "error": "Soft banner warning if the pairing code is invalid, retry button."
+      },
+      "layout": "Full-bleed romantic hero image at the top with a top-to-bottom vertical gradient scrim (transparent to surface). Bottom half contains title ('Connect your space'), name input, and pairing code input. Primary CTA is sticky at the bottom. Use 'Caveat' font for a small, handwritten-style welcome note."
+    },
+    {
+      "name": "Home Dashboard",
+      "purpose": "A shared emotional snapshot showing both partners' daily moods and relationship duration.",
+      "states": {
+        "loading": "Skeleton loaders for mood cards.",
+        "empty": "Show 'Set your mood for today' prompt with empty dashed-border cards.",
+        "error": "Retry button with a calming text."
+      },
+      "layout": "Editorial serif heading showing 'Since [Date]'. Below, two overlapping or side-by-side large cards (brandTertiary tinted) displaying Partner A and Partner B's daily mood (emoji + short note). Underneath, a soft grid of quick actions: 'Add a Worry', 'Gallery', 'Chat'."
+    },
+    {
+      "name": "Chat",
+      "purpose": "1-on-1 messaging emphasizing privacy (one-time view, no-save) and intimate communication.",
+      "states": {
+        "loading": "Standard chat skeleton.",
+        "empty": "Illustration of a notebook with a 'Say hello' prompt.",
+        "error": "Banner at top to reconnect."
+      },
+      "layout": "Soft rounded chat bubbles. My messages in brandPrimary, partner messages in surfaceSecondary. Media attachments have a lock icon overlay if flagged 'one-time view' or 'no-save'. Input field docked at the bottom with attachment options inside a KeyboardAvoidingView."
+    },
+    {
+      "name": "Gallery",
+      "purpose": "Shared grid of memories, respecting privacy flags.",
+      "states": {
+        "loading": "Staggered skeleton blocks.",
+        "empty": "Cozy empty notebook image with text 'No memories saved yet. Share a photo in chat.'",
+        "error": "Failed to load grid, retry CTA."
+      },
+      "layout": "Asymmetrical, scrapbook-style 2-column masonry grid. 8px padding between images. Tap to enlarge full screen (modal with swipe). Images marked 'no-save' lack download options."
+    },
+    {
+      "name": "Worries Board",
+      "purpose": "A safe, threaded space to post vulnerabilities and support each other.",
+      "states": {
+        "loading": "Skeleton cards.",
+        "empty": "Warm coffee cup aesthetic image with text 'No worries shared. It's a peaceful day.'",
+        "error": "Tap to reload board."
+      },
+      "layout": "Vertical scroll of cards resembling soft paper notes (surfaceSecondary). Each card displays the author's name, the worry in a slightly larger text, and partner's comments underneath like a thread. Sticky 'Share a worry' button at the bottom."
+    }
+  ],
+  "haptics": {
+    "events": {
+      "tab_press": "light",
+      "button_press": "medium",
+      "mood_select": "success",
+      "send_message": "light",
+      "post_worry": "medium"
+    }
+  },
+  "images": {
+    "onboarding_hero": {
+      "url": "https://images.unsplash.com/photo-1525206809752-65312b959c88?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHx3YXJtJTIwcm9tYW50aWMlMjBjb3VwbGUlMjBob2xkaW5nJTIwaGFuZHMlMjBjb3p5fGVufDB8fHx8MTc4OTgxMDEzN3ww&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.pexels.com/photos/10009030/pexels-photo-10009030.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Two people lying closely or holding hands warmly"
+    },
+    "empty_gallery": {
+      "url": "https://images.unsplash.com/photo-1632425033037-2f2310d26e93?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwyfHxjb3p5JTIwZW1wdHklMjBnYWxsZXJ5JTIwYWVzdGhldGljJTIwbm90ZWJvb2t8ZW58MHx8fHwxNzg5ODEwMTM3fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Cozy aesthetic notebook and socks"
+    },
+    "empty_worries": {
+      "url": "https://images.unsplash.com/photo-1603950227760-e609ce8e15b4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwxfHx3YXJtJTIwY29mZmVlJTIwY3VwJTIwbGV0dGVycyUyMGFlc3RoZXRpY3xlbnwwfHx8fDE3ODk4MTAxMzd8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "White book page on textile"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the Hand-Drawn / Journal personality. The app should feel warm, intimate, and tactile.",
+    "Use the designated 'soft rose/blush' brand palette against earthy 'surface' off-whites. Do NOT default to generic blue, purple, or pure white/black.",
+    "Utilize 'Fraunces' for major headings to give an editorial, reflective feel, and 'Nunito' for body text for approachability. Use 'Caveat' occasionally for handwritten-style mood notes or small accents.",
+    "Never use glassmorphism or blur effects for this app. Rely on solid colors, soft borders, and generous spacing to create depth.",
+    "For the Onboarding screen, implement a full-bleed hero image using `onboarding_hero` with a top-to-bottom gradient scrim to ensure text readability.",
+    "Implement the 'No-save' and 'One-time view' functionality logically in the chat. Provide a distinct visual lock icon overlay on these media items.",
+    "Ensure 'Sticky primary CTAs over scrolling content' rule is respected (e.g., 'Share a worry' button).",
+    "Enlarge images in Chat and Gallery on tap using a proper full-screen modal or shared element transition, allowing pinch-zoom.",
+    "Apply haptics strictly as defined in the haptics block (e.g., success haptic on mood selection)."
+  ]
+}
