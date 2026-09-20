@@ -20,6 +20,10 @@ function NativeTabsLayout() {
         <NativeTabs.Trigger.Icon sf="photo.on.rectangle.fill" />
         <NativeTabs.Trigger.Label>Gallery</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="calendar">
+        <NativeTabs.Trigger.Icon sf="calendar" />
+        <NativeTabs.Trigger.Label>Calendar</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="worries">
         <NativeTabs.Trigger.Icon sf="cloud.fill" />
         <NativeTabs.Trigger.Label>Worries</NativeTabs.Trigger.Label>
@@ -52,6 +56,7 @@ function JsTabsLayout() {
       <Tabs.Screen name="index" options={{ title: "Us", tabBarIcon: icon("heart") }} />
       <Tabs.Screen name="chat" options={{ title: "Chat", tabBarIcon: icon("message-circle") }} />
       <Tabs.Screen name="gallery" options={{ title: "Gallery", tabBarIcon: icon("image") }} />
+      <Tabs.Screen name="calendar" options={{ title: "Calendar", tabBarIcon: icon("calendar") }} />
       <Tabs.Screen name="worries" options={{ title: "Worries", tabBarIcon: icon("cloud-drizzle") }} />
     </Tabs>
   );

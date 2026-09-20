@@ -180,6 +180,17 @@ class CommentIn(BaseModel):
     text: str
 
 
+class EventIn(BaseModel):
+    title: str
+    note: Optional[str] = ""
+    event_date: str  # YYYY-MM-DD (UK_TZ), same convention as moods' `date`
+
+
+class ReadIn(BaseModel):
+    through_id: Optional[str] = None
+    message_ids: Optional[list[str]] = None
+
+
 # ---------------------------------------------------------------------------
 # Auth helper
 # ---------------------------------------------------------------------------
@@ -303,6 +314,9 @@ def message_public(m, me_id):
         "created_at": m.get("created_at"),
         "consumed": consumed,
         "one_time": one_time,
+        # read receipts are additive: independent of one-time consumption.
+        # read_at is set once the recipient has actually looked at the chat.
+        "read_at": m.get("read_at"),
         # recipient can still open a one-time item until they've viewed it once
         "can_open": (not one_time) or (not is_mine and not consumed),
     }
@@ -414,6 +428,58 @@ async def open_once(msg_id: str, x_user_id: Optional[str] = Header(None)):
     if m.get("consumed"):
         raise HTTPException(status_code=410, detail="Already viewed")
     await db.messages.update_one({"id": msg_id}, {"$set": {"consumed": True, "consumed_at": now_iso()}})
+    return {"ok": True}
+
+
+@api_router.post("/messages/read")
+async def mark_read(body: ReadIn, x_user_id: Optional[str] = Header(None)):
+    """Recipient marks the partner's messages as read (iMessage-style).
+
+    Called only when the chat screen is actually focused/foregrounded — never
+    from a background poll. Only messages the partner sent (not mine) get a
+    read_at stamp, and we never overwrite an existing one. This is completely
+    independent of the one_time `consumed` flag."""
+    user = await get_user(x_user_id)
+    q: dict = {
+        "couple_id": user["couple_id"],
+        "sender_id": {"$ne": user["id"]},
+        "deleted_at": None,
+        "read_at": None,
+    }
+    if body.message_ids:
+        q["id"] = {"$in": body.message_ids}
+    elif body.through_id:
+        through = await db.messages.find_one(
+            {"id": body.through_id, "couple_id": user["couple_id"], "deleted_at": None})
+        if not through:
+            raise HTTPException(status_code=404, detail="Not found")
+        q["created_at"] = {"$lte": through.get("created_at")}
+    res = await db.messages.update_many(q, {"$set": {"read_at": now_iso()}})
+    return {"ok": True, "marked": res.modified_count}
+
+
+
+@api_router.post("/messages/{msg_id}/screenshot")
+async def report_screenshot(msg_id: str, x_user_id: Optional[str] = Header(None)):
+    """Best-effort report that the viewer just screenshotted a protected
+    (no_save / one_time) photo or video. We can't stop a screenshot on iOS,
+    so instead we let the sender know it happened, the way Snapchat does."""
+    user = await get_user(x_user_id)
+    m = await db.messages.find_one({"id": msg_id, "couple_id": user["couple_id"], "deleted_at": None})
+    if not m or m.get("privacy") not in ("no_save", "one_time") or m["sender_id"] == user["id"]:
+        return {"ok": True}
+    try:
+        recipients = await partner_user_ids(user["couple_id"], user["id"])
+        await send_push(
+            recipients=recipients,
+            data={
+                "title": f"📸 {user['name']}",
+                "message": "Took a screenshot of your protected photo",
+                "action_url": "/(tabs)/chat",
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Push failed (non-blocking): {e}")
     return {"ok": True}
 
 
@@ -607,6 +673,96 @@ async def add_comment(worry_id: str, body: CommentIn, x_user_id: Optional[str] =
     except Exception as e:
         logger.warning(f"Push failed (non-blocking): {e}")
     return {"id": c["id"]}
+
+
+# ---------------------------------------------------------------------------
+# Shared calendar / events
+# (event_date is a UK-TZ YYYY-MM-DD, same convention as moods' `date`.
+#  An event auto-expires once uk_today() moves past its date — e.g. one set
+#  for the 27th disappears the moment the 28th begins, UK midnight.)
+# ---------------------------------------------------------------------------
+def event_public(e, me_id):
+    return {
+        "id": e["id"],
+        "title": e["title"],
+        "note": e.get("note", ""),
+        "event_date": e["event_date"],
+        "author_id": e["author_id"],
+        "author_name": e["author_name"],
+        "is_mine": e["author_id"] == me_id,
+        "created_at": e.get("created_at"),
+    }
+
+
+@api_router.get("/events")
+async def list_events(x_user_id: Optional[str] = Header(None)):
+    user = await get_user(x_user_id)
+    today = uk_today()
+    cur = db.events.find({"couple_id": user["couple_id"], "deleted_at": None}).sort("event_date", 1)
+    events = await cur.to_list(1000)
+    out = []
+    for e in events:
+        # Self-healing cleanup (mirrors put_object/get_object): an expired event
+        # is soft-deleted the first time any request touches it, so it never
+        # lingers past the first read after UK midnight.
+        if e["event_date"] < today:
+            await db.events.update_one({"id": e["id"]}, {"$set": {"deleted_at": now_iso()}})
+            continue
+        out.append(event_public(e, user["id"]))
+    return out
+
+
+@api_router.post("/events")
+async def create_event(body: EventIn, x_user_id: Optional[str] = Header(None)):
+    user = await get_user(x_user_id)
+    title = body.title.strip()
+    event_date = (body.event_date or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    try:
+        datetime.strptime(event_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="event_date must be YYYY-MM-DD")
+    if event_date < uk_today():
+        raise HTTPException(status_code=400, detail="Cannot add an event in the past")
+    e = {
+        "id": str(uuid.uuid4()),
+        "couple_id": user["couple_id"],
+        "author_id": user["id"],
+        "author_name": user["name"],
+        "title": title,
+        "note": (body.note or "").strip(),
+        "event_date": event_date,
+        "created_at": now_iso(),
+        "deleted_at": None,
+    }
+    await db.events.insert_one(e)
+    try:
+        recipients = await partner_user_ids(user["couple_id"], user["id"])
+        await send_push(
+            recipients=recipients,
+            data={
+                "title": f"📅 {user['name']} added an event",
+                "message": title[:140],
+                "action_url": "/(tabs)/calendar",
+            },
+        )
+    except Exception as ex:
+        logger.warning(f"Push failed (non-blocking): {ex}")
+    return event_public(e, user["id"])
+
+
+@api_router.delete("/events/{event_id}")
+async def delete_event(event_id: str, x_user_id: Optional[str] = Header(None)):
+    user = await get_user(x_user_id)
+    e = await db.events.find_one({"id": event_id, "couple_id": user["couple_id"], "deleted_at": None})
+    if not e:
+        raise HTTPException(status_code=404, detail="Not found")
+    if e["author_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the author can delete this event")
+    await db.events.update_one({"id": event_id}, {"$set": {"deleted_at": now_iso()}})
+    return {"ok": True}
+
 
 
 # ---------------------------------------------------------------------------

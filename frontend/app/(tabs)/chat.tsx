@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo, useCallback } from "react";
+import { useRef, useState, useMemo, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,13 +8,16 @@ import {
   Modal,
   ActivityIndicator,
   Linking,
+  AppState,
 } from "react-native";
 import { Image } from "expo-image";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import Feather from "@react-native-vector-icons/feather";
+import { format, parseISO } from "date-fns";
 
 import { makeStyles, spacing, radius, useTheme } from "@/src/theme";
 import { api, mediaSource } from "@/src/api";
@@ -35,6 +38,7 @@ type Msg = {
   one_time: boolean;
   consumed: boolean;
   can_open: boolean;
+  read_at?: string | null;
 };
 
 const PRIVACY: { key: string; label: string; icon: any }[] = [
@@ -42,6 +46,14 @@ const PRIVACY: { key: string; label: string; icon: any }[] = [
   { key: "no_save", label: "No saving", icon: "lock" },
   { key: "one_time", label: "View once", icon: "eye-off" },
 ];
+
+function formatReadTime(iso: string) {
+  try {
+    return format(parseISO(iso), "HH:mm");
+  } catch {
+    return "";
+  }
+}
 
 export default function Chat() {
   const styles = useStyles();
@@ -64,7 +76,7 @@ export default function Chat() {
     refetchInterval: 4000,
   });
 
-  const messages = msgsQ.data || [];
+  const messages = useMemo(() => msgsQ.data || [], [msgsQ.data]);
   const partnerName = meQ.data?.partner?.name;
 
   // images/videos that are freely viewable (for swipe gallery inside chat)
@@ -72,6 +84,45 @@ export default function Chat() {
     () => messages.filter((m) => m.type === "media" && !m.one_time),
     [messages],
   );
+
+  // Read receipts (iMessage-style): the label sits under the most recent of
+  // MY messages the partner has actually read.
+  const lastReadMineId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].is_mine && messages[i].read_at) return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
+  // Mark the partner's messages as read — but ONLY while this screen is
+  // actually focused AND the app is foregrounded. Never from the 4s background
+  // poll, so messages aren't marked read without the user looking at them.
+  const [screenFocused, setScreenFocused] = useState(false);
+  const [appActive, setAppActive] = useState(AppState.currentState === "active");
+
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => setScreenFocused(false);
+    }, []),
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => setAppActive(s === "active"));
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!screenFocused || !appActive) return;
+    const msgs = msgsQ.data || [];
+    if (!msgs.length) return;
+    if (!msgs.some((m) => !m.is_mine && !m.read_at)) return; // nothing new to mark
+    const last = msgs[msgs.length - 1];
+    api
+      .post("/messages/read", { through_id: last.id })
+      .then(() => qc.invalidateQueries({ queryKey: ["messages"] }))
+      .catch(() => {});
+  }, [screenFocused, appActive, msgsQ.data, qc]);
 
   const sendText = async () => {
     const t = text.trim();
@@ -195,12 +246,19 @@ export default function Chat() {
 
   const renderItem = ({ item }: { item: Msg }) => {
     const mine = item.is_mine;
+    const showRead = item.id === lastReadMineId && !!item.read_at;
+    const readLabel = showRead ? (
+      <Text style={styles.readReceipt} testID={`read-receipt-${item.id}`}>
+        Read {formatReadTime(item.read_at!)}
+      </Text>
+    ) : null;
     if (item.type === "text") {
       return (
         <View style={[styles.row, mine ? styles.rowMine : styles.rowTheirs]}>
           <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
             <Text style={[styles.msgText, mine ? styles.msgTextMine : styles.msgTextTheirs]}>{item.text}</Text>
           </View>
+          {readLabel}
         </View>
       );
     }
@@ -208,6 +266,7 @@ export default function Chat() {
     return (
       <View style={[styles.row, mine ? styles.rowMine : styles.rowTheirs]}>
         <MediaBubble item={item} mine={mine} onPress={() => openMedia(item)} />
+        {readLabel}
       </View>
     );
   };
@@ -365,6 +424,12 @@ function MediaBubble({ item, mine, onPress }: { item: Msg; mine: boolean; onPres
           <Feather name="lock" size={12} color="#FFFFFF" />
         </View>
       ) : null}
+      {mine && item.read_at ? (
+        <View style={styles.seenBadge} testID={`media-seen-${item.id}`}>
+          <Feather name="check" size={11} color="#FFFFFF" />
+          <Text style={styles.seenText}>Seen</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -407,6 +472,9 @@ const useStyles = makeStyles((c) => ({
     backgroundColor: "rgba(0,0,0,0.25)",
   },
   lockBadge: { position: "absolute", top: spacing.sm, right: spacing.sm, backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 999, padding: 6 },
+  seenBadge: { position: "absolute", bottom: spacing.sm, right: spacing.sm, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  seenText: { fontFamily: "Nunito", fontSize: 11, fontWeight: "700", color: "#FFFFFF" },
+  readReceipt: { fontFamily: "Nunito", fontSize: 11, color: c.muted, marginTop: 3, marginRight: spacing.xs },
   oneTimeCard: { width: 200, height: 120, alignItems: "center", justifyContent: "center", gap: spacing.sm },
   oneTimeText: { fontFamily: "Nunito", fontSize: 14, fontWeight: "700" },
   inputBar: {

@@ -44,6 +44,13 @@ export const api = {
     });
     return handle(res);
   },
+  async del(path: string) {
+    const res = await fetch(`${BASE}/api${path}`, {
+      method: "DELETE",
+      headers: headers(),
+    });
+    return handle(res);
+  },
   async uploadMedia(uri: string, mediaType: "image" | "video", privacy: string) {
     const form = new FormData();
     const name = uri.split("/").pop() || (mediaType === "image" ? "photo.jpg" : "video.mp4");

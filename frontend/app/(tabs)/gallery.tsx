@@ -11,7 +11,7 @@ import { usesNativeTabs } from "@/src/navigation";
 import { MediaViewer, ViewerItem } from "@/src/components/MediaViewer";
 import { haptic } from "@/src/haptics";
 
-type Media = { id: string; media_path: string; media_type?: string; privacy: string; sender_name?: string };
+type Media = { id: string; media_path: string; media_type?: string; privacy: string; sender_name?: string; is_mine?: boolean; read_at?: string | null };
 
 const EMPTY_IMG =
   "https://images.unsplash.com/photo-1632425033037-2f2310d26e93?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwyfHxjb3p5JTIwZW1wdHklMjBnYWxsZXJ5JTIwYWVzdGhldGljJTIwbm90ZWJvb2t8ZW58MHx8fHwxNzg5ODEwMTM3fDA&ixlib=rb-4.1.0&q=85";
@@ -49,6 +49,12 @@ export default function Gallery() {
       ) : null}
       {item.privacy === "no_save" ? (
         <View style={styles.lockBadge}><Feather name="lock" size={11} color="#FFFFFF" /></View>
+      ) : null}
+      {item.is_mine && item.read_at ? (
+        <View style={styles.seenBadge} testID={`gallery-seen-${item.id}`}>
+          <Feather name="check" size={10} color="#FFFFFF" />
+          <Text style={styles.seenText}>Seen</Text>
+        </View>
       ) : null}
     </Pressable>
   );
@@ -101,4 +107,6 @@ const useStyles = makeStyles((c) => ({
   img: { width: "100%", height: "100%" },
   playOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.2)" },
   lockBadge: { position: "absolute", top: spacing.sm, right: spacing.sm, backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 999, padding: 5 },
+  seenBadge: { position: "absolute", bottom: spacing.sm, right: spacing.sm, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  seenText: { fontFamily: "Nunito", fontSize: 10, fontWeight: "700", color: "#FFFFFF" },
 }));

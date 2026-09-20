@@ -7,6 +7,7 @@ import {
   useWindowDimensions,
   FlatList,
   Platform,
+  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -19,10 +20,20 @@ import Animated, {
 } from "react-native-reanimated";
 import Feather from "@react-native-vector-icons/feather";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as ScreenCapture from "expo-screen-capture";
 
 import { makeStyles, spacing, useTheme } from "@/src/theme";
-import { mediaSource, mediaVideoUri } from "@/src/api";
+import { api, mediaSource, mediaVideoUri } from "@/src/api";
 import { haptic } from "@/src/haptics";
+
+// Key used to scope preventScreenCaptureAsync/allowScreenCaptureAsync calls
+// to this component, so it never clobbers screen-capture state some other
+// screen may be managing.
+const CAPTURE_KEY = "media-viewer-protected";
+
+function isProtected(item?: ViewerItem | null) {
+  return !!item && (item.privacy === "no_save" || item.privacy === "one_time");
+}
 
 export type ViewerItem = {
   id: string;
@@ -161,8 +172,58 @@ export function MediaViewer({
   }, [visible, initialIndex]);
 
   const current = items[index];
+  const protectedItem = isProtected(current);
   const canSave =
     current && current.privacy !== "no_save" && current.privacy !== "one_time" && Platform.OS !== "web";
+
+  // Block OS-level screenshots/recordings (fully effective on Android via
+  // FLAG_SECURE; iOS has no way to block the shutter, so we detect it below
+  // instead). Re-evaluated whenever the visible item's protection changes,
+  // and always released when the viewer closes or unmounts.
+  React.useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (visible && protectedItem) {
+      ScreenCapture.preventScreenCaptureAsync(CAPTURE_KEY).catch(() => {});
+    } else {
+      ScreenCapture.allowScreenCaptureAsync(CAPTURE_KEY).catch(() => {});
+    }
+    return () => {
+      ScreenCapture.allowScreenCaptureAsync(CAPTURE_KEY).catch(() => {});
+    };
+  }, [visible, protectedItem]);
+
+  // iOS (and any Android device where FLAG_SECURE gets bypassed) can still
+  // take a screenshot — we can't stop it, so at least let the sender know,
+  // the way Snapchat does, and tell the viewer we noticed.
+  React.useEffect(() => {
+    if (!visible || Platform.OS === "web") return;
+    let sub: { remove: () => void } | null = null;
+    let cancelled = false;
+    // Older Android needs a storage-read permission to fire the screenshot
+    // callback at all; iOS always reports granted. Never blocks rendering.
+    ScreenCapture.requestPermissionsAsync()
+      .catch(() => ({ granted: false }))
+      .then((perm) => {
+        if (cancelled || !perm.granted) return;
+        sub = ScreenCapture.addScreenshotListener(() => {
+          if (!protectedItem || !current) return;
+          haptic.warning();
+          // Notify the sender (best-effort), then give the viewer an
+          // unmissable, blocking confirmation that their partner was told.
+          api.post(`/messages/${current.id}/screenshot`, {}).catch(() => {});
+          Alert.alert(
+            "Screenshot detected",
+            "Your partner has been notified that you took a screenshot of their protected photo.",
+            [{ text: "OK", style: "default" }],
+            { cancelable: false },
+          );
+        });
+      });
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
+  }, [visible, protectedItem, current]);
 
   const onSave = useCallback(async () => {
     if (!current || saving) return;
