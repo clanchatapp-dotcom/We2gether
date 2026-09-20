@@ -6,12 +6,12 @@ import { File } from "expo-file-system";
  *
  * GitHub Actions should provide EXPO_PUBLIC_BACKEND_URL as a secret.
  *
- * The fallback is useful for builds where the GitHub secret wasn't supplied.
- * If your backend URL changes, update this fallback as well.
+ * The fallback is the live 2gether backend so the APK cannot fall back
+ * to the old calendar test server.
  */
 const CONFIGURED_BASE =
   process.env.EXPO_PUBLIC_BACKEND_URL?.trim() ||
-  "https://calendar-read-harden.preview.emergentagent.com";
+  "https://couples-space-api.emergent.host";
 
 const BASE = CONFIGURED_BASE.replace(/\/+$/, "");
 
