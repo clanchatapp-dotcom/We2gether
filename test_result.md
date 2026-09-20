@@ -160,7 +160,7 @@ backend:
 frontend:
   - task: "Calendar tab (new app/(tabs)/calendar.tsx) + tab registered in both layouts"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/(tabs)/calendar.tsx"
     stuck_count: 0
     priority: "high"
@@ -169,9 +169,15 @@ frontend:
         -working: "NA"
         -agent: "main"
         -comment: "Agenda list grouped by day, each card shows title/note + 'added by {author_name}', author-only delete. Add-event sheet with title/note/horizontal date strip. Tab added to NativeTabs + JsTabs (calendar icon). NOT yet UI-tested (awaiting user permission)."
+        -working: false
+        -agent: "testing"
+        -comment: "CRITICAL BLOCKER: CORS error prevents onboarding completion. Frontend deployed at https://fecabad5-d784-41b3-87b4-a8f505167228.preview.emergentagent.com but backend URL in frontend/.env is https://calendar-read-harden.preview.emergentagent.com. When attempting to create couple via POST /api/couples/create, CORS preflight fails with: 'Access-Control-Allow-Origin' header has value 'https://calendar-read-harden.cluster-5.preview.emergentcf.cloud' that is not equal to supplied origin. Backend code has allow_origins=['*'] but actual response shows specific origin. This blocks ALL testing - cannot reach tabs screen or Calendar. DEPLOYMENT/INFRASTRUCTURE ISSUE: Frontend and backend URLs are mismatched. Cannot test Calendar functionality until CORS is resolved."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ PASSED - Tested at correct URL https://calendar-read-harden.preview.emergentagent.com (same-origin). (1) Onboarding: Successfully created AgentA, navigated to tabs screen with all 5 tabs visible (Us, Chat, Gallery, Calendar, Worries). (2) Calendar empty state: 'Nothing planned yet' displayed correctly. (3) Add event flow: Tapped 'Add event' button, sheet opened with 'What's coming up?', filled title 'Movie night' and note 'Bring snacks', selected future date (2026-09-23). (4) Event creation: POST /api/events returned 200 with correct response body including id, title, note, event_date, author_name='AgentA', is_mine=true. (5) Event display: Event card appeared in agenda with title 'Movie night', note 'Bring snacks', subtitle 'added by AgentA', and delete button visible. No error messages or console errors. All testIDs working correctly."
   - task: "Read receipts UI in chat + gallery (focus-only mark read, Read {time} label, Seen badge)"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/(tabs)/chat.tsx"
     stuck_count: 0
     priority: "high"
@@ -180,28 +186,36 @@ frontend:
         -working: "NA"
         -agent: "main"
         -comment: "Marks read only when screen focused (useFocusEffect) AND app active (AppState) — not from 4s poll. 'Read HH:mm' under last read own message; 'Seen' badge on own media in chat + gallery. NOT yet UI-tested."
+        -working: false
+        -agent: "testing"
+        -comment: "BLOCKED by CORS error - cannot reach chat screen to test read receipts. Same root cause as Calendar task."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ PASSED - Tested with two paired users at correct URL. (1) Pairing: AgentA created with code 3QM05V displayed in invite card (testID='couple-code') on Us tab. AgentB successfully joined using 'Join with a code' mode. (2) Message sending: AgentA sent message 'Hey there! Testing read receipts 👋' in Chat tab. (3) Read marking: AgentB opened Chat tab (screen focused), which should trigger read receipt marking. (4) Read receipt display: After 8 seconds, 'Read 16:10' label appeared under AgentA's sent message on AgentA's screen. (5) Location: Read receipt displayed correctly under the most recent read message (iMessage-style). No network errors for message APIs. Focus-only marking working as designed (marks read when screen focused AND app active)."
   - task: "Harden screenshot protection: blocking Alert in MediaViewer (shared chat+gallery)"
     implemented: true
-    working: "NA"
+    working: false
     file: "frontend/src/components/MediaViewer.tsx"
-    stuck_count: 0
+    stuck_count: 1
     priority: "medium"
     needs_retesting: false
     status_history:
         -working: "NA"
         -agent: "main"
         -comment: "Replaced toast with blocking Alert.alert on screenshot-detected (iOS detect+notify; Android FLAG_SECURE prevents). Capture key scoped, released on close — no leak between chat/gallery. NOT yet UI-tested."
+        -working: false
+        -agent: "testing"
+        -comment: "BLOCKED by CORS error - cannot reach gallery/media viewer to test screenshot protection. Same root cause as Calendar task."
 
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Shared calendar events API (GET/POST/DELETE /api/events with UK-midnight expiry self-heal)"
-    - "Read receipts: read_at field + POST /api/messages/read + message_public output"
+    - "Harden screenshot protection: blocking Alert in MediaViewer (shared chat+gallery)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -211,3 +225,7 @@ agent_communication:
     -message: "Please test the new backend endpoints: (1) /api/events create/list/delete incl. author-only delete (403 for partner) and expiry self-heal (a past-dated event inserted directly into Mongo must be filtered out AND soft-deleted on first GET); (2) /api/messages/read via through_id and message_ids, ensuring only the partner's messages get read_at, sender's own are untouched, and one_time consumed is unaffected. New pytest file: backend/tests/test_events_and_read.py. Existing flows must still pass. NOTE: .env files were recreated this session."
     -agent: "testing"
     -message: "✅ BACKEND TESTING COMPLETE - ALL TESTS PASSED. Executed comprehensive testing: (1) Full pytest suite: 38/38 tests passed (test_2gether_flows.py, test_events_and_read.py, test_put_object_selfheal.py); (2) Manual API testing via backend_test.py: 21/21 tests passed covering all scenarios in review request including EXPIRY SELF-HEAL (verified past event inserted into MongoDB was filtered and soft-deleted) and READ RECEIPT INDEPENDENCE from one_time consumption. (3) Regression testing: verified text messages, moods, worries, media upload, and gallery all working. Both new features (shared calendar + read receipts) are fully functional with all edge cases handled correctly. No issues found."
+    -agent: "testing"
+    -message: "🚨 CRITICAL BLOCKER - FRONTEND UI TESTING FAILED DUE TO CORS ERROR. User requested testing at URL: https://fecabad5-d784-41b3-87b4-a8f505167228.preview.emergentagent.com but this deployment has CORS misconfiguration. Frontend/.env has EXPO_PUBLIC_BACKEND_URL=https://calendar-read-harden.preview.emergentagent.com but CORS response shows origin 'https://calendar-read-harden.cluster-5.preview.emergentcf.cloud'. Backend code has allow_origins=['*'] but actual HTTP response rejects the frontend origin. IMPACT: Cannot complete onboarding (POST /api/couples/create fails with CORS error), therefore cannot reach tabs screen, cannot test Calendar, Read Receipts, or Screenshot Protection. This is a DEPLOYMENT/INFRASTRUCTURE issue, not a code issue. NEXT STEPS: (1) Verify backend is accessible and CORS is properly configured for the deployed frontend URL, OR (2) Update frontend/.env to point to correct backend URL that accepts this frontend origin, OR (3) Fix reverse proxy/ingress CORS configuration."
+    -agent: "testing"
+    -message: "✅ FRONTEND UI TESTING COMPLETE - ALL TESTS PASSED. User provided correct URL (https://calendar-read-harden.preview.emergentagent.com) which resolved previous CORS issues. Tested at same-origin deployment. TEST 1 - CALENDAR (single user): ✅ PASSED - Created AgentA, navigated to tabs, verified all 5 tabs present, opened Calendar tab showing empty state, added event 'Movie night' with note 'Bring snacks' for future date, POST /api/events returned 200, event card displayed correctly with title/note/author. TEST 2 - READ RECEIPTS (two paired users): ✅ PASSED - Created AgentA with pairing code 3QM05V, AgentB joined successfully, AgentA sent message in Chat, AgentB opened Chat (screen focused), read receipt 'Read 16:10' appeared under AgentA's message after 8 seconds. Both features working perfectly. Screenshot protection NOT tested (system limitation - cannot test hardware/screenshot features). No console errors or network failures."
