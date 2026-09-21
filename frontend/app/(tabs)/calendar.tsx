@@ -15,13 +15,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@react-native-vector-icons/feather";
-import { format, addDays, isToday, isTomorrow, parseISO } from "date-fns";
+import { format, addDays, parseISO } from "date-fns";
 
 import { makeStyles, spacing, radius, useTheme } from "@/src/theme";
 import { api } from "@/src/api";
 import { usesNativeTabs } from "@/src/navigation";
 import { haptic } from "@/src/haptics";
 import { useToast } from "@/src/components/Toast";
+import { ukTodayISO, isoToLocalDate } from "@/src/ukTime";
 
 type EventItem = {
   id: string;
@@ -40,19 +41,22 @@ type Row =
 const EMPTY_IMG =
   "https://images.unsplash.com/photo-1506784983877-45594efa4cbe?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwxfHxjYWxlbmRhciUyMHBsYW5uZXIlMjBhZXN0aGV0aWN8ZW58MHx8fHwxNzg5ODEwMTM3fDA&ixlib=rb-4.1.0&q=85";
 
-function dayLabel(dateStr: string) {
+function dayLabel(dateStr: string, todayISO: string, tomorrowISO: string) {
   const d = parseISO(dateStr);
-  if (isToday(d)) return `Today · ${format(d, "EEE d MMM")}`;
-  if (isTomorrow(d)) return `Tomorrow · ${format(d, "EEE d MMM")}`;
+  if (dateStr === todayISO) return `Today · ${format(d, "EEE d MMM")}`;
+  if (dateStr === tomorrowISO) return `Tomorrow · ${format(d, "EEE d MMM")}`;
   return format(d, "EEEE · d MMM yyyy");
 }
 
-// A cross-platform date strip: today + next 89 days (events auto-expire in the
-// past anyway, so there's no reason to pick a past date).
-const DATE_OPTIONS = Array.from({ length: 90 }, (_, i) => {
-  const d = addDays(new Date(), i);
-  return { value: format(d, "yyyy-MM-dd"), label: format(d, "EEE"), day: format(d, "d"), mon: format(d, "MMM") };
-});
+// A cross-platform date strip: UK-today + next 89 days (events auto-expire
+// in the past anyway, so there's no reason to pick a past date).
+function buildDateOptions() {
+  const start = isoToLocalDate(ukTodayISO());
+  return Array.from({ length: 90 }, (_, i) => {
+    const d = addDays(start, i);
+    return { value: format(d, "yyyy-MM-dd"), label: format(d, "EEE"), day: format(d, "d"), mon: format(d, "MMM") };
+  });
+}
 
 export default function Calendar() {
   const styles = useStyles();
@@ -61,10 +65,14 @@ export default function Calendar() {
   const qc = useQueryClient();
   const toast = useToast();
 
+  const dateOptions = useMemo(() => buildDateOptions(), []);
+  const todayISO = dateOptions[0].value;
+  const tomorrowISO = dateOptions[1]?.value ?? todayISO;
+
   const [compose, setCompose] = useState(false);
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
-  const [date, setDate] = useState(DATE_OPTIONS[0].value);
+  const [date, setDate] = useState(dateOptions[0].value);
   const [posting, setPosting] = useState(false);
 
   const bottomChrome = usesNativeTabs ? insets.bottom : 0;
@@ -88,7 +96,7 @@ export default function Calendar() {
     haptic.light();
     setTitle("");
     setNote("");
-    setDate(DATE_OPTIONS[0].value);
+    setDate(dateOptions[0].value);
     setCompose(true);
   };
 
@@ -123,7 +131,7 @@ export default function Calendar() {
       return (
         <View style={styles.dayHeader}>
           <Feather name="calendar" size={14} color={colors.brandPrimary} />
-          <Text style={styles.dayHeaderText}>{dayLabel(item.date)}</Text>
+          <Text style={styles.dayHeaderText}>{dayLabel(item.date, todayISO, tomorrowISO)}</Text>
         </View>
       );
     }
@@ -148,7 +156,7 @@ export default function Calendar() {
     );
   };
 
-  const selected = DATE_OPTIONS.find((d) => d.value === date);
+  const selected = dateOptions.find((d) => d.value === date);
 
   return (
     <View style={styles.root}>
@@ -215,7 +223,7 @@ export default function Calendar() {
               When? <Text style={styles.pickLabelValue}>{selected ? `${selected.label} ${selected.day} ${selected.mon}` : ""}</Text>
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateStrip}>
-              {DATE_OPTIONS.map((d) => {
+              {dateOptions.map((d) => {
                 const active = d.value === date;
                 return (
                   <Pressable
