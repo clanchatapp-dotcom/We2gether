@@ -17,14 +17,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import Feather from "@react-native-vector-icons/feather";
-import { format, parseISO } from "date-fns";
-
 import { makeStyles, spacing, radius, useTheme } from "@/src/theme";
 import { api, mediaSource } from "@/src/api";
 import { usesNativeTabs } from "@/src/navigation";
 import { haptic } from "@/src/haptics";
 import { useToast } from "@/src/components/Toast";
 import { MediaViewer, ViewerItem } from "@/src/components/MediaViewer";
+import { formatUkTime } from "@/src/ukTime";
 
 type Msg = {
   id: string;
@@ -49,7 +48,9 @@ const PRIVACY: { key: string; label: string; icon: any }[] = [
 
 function formatReadTime(iso: string) {
   try {
-    return format(parseISO(iso), "HH:mm");
+    // Always shown in UK time so both partners see the same clock time,
+    // regardless of which timezone their own phone is set to.
+    return formatUkTime(iso);
   } catch {
     return "";
   }
