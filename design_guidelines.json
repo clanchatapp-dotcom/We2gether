@@ -1,0 +1,127 @@
+{
+  "project_name": "We2gether",
+  "archetype": "ORGANIC & EARTHY / COZY INTIMACY",
+  "theme": "Warm Light Mode default with soft dark mode support (Warm Rose / Sand / Charcoal / Dusty Terracotta)",
+  "typography": {
+    "headings": {
+      "font_family": "Plus Jakarta Sans, Outfit, sans-serif",
+      "h1": "text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-amber-950 dark:text-amber-50",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight text-amber-900 dark:text-amber-100",
+      "h3": "text-xl sm:text-2xl font-medium text-amber-900 dark:text-amber-200",
+      "h4": "text-lg font-medium text-amber-900 dark:text-amber-200",
+      "label": "text-xs font-semibold uppercase tracking-widest text-rose-700 dark:text-rose-300"
+    },
+    "body": {
+      "font_family": "Plus Jakarta Sans, sans-serif",
+      "primary": "text-base text-amber-950/80 dark:text-amber-100/80 leading-relaxed",
+      "muted": "text-sm text-stone-500 dark:text-stone-400"
+    },
+    "font_rules": "Do NOT use Inter for main headings. Use Plus Jakarta Sans or Outfit. Maintain tight tracking on titles."
+  },
+  "colors": {
+    "light_mode": {
+      "background": "#FAFAf7 (warm linen / bone)",
+      "surface_card": "#FFFFFF with 1px border #E8E2D9",
+      "surface_glass": "bg-white/80 backdrop-blur-md border border-amber-100/60",
+      "primary": "#E05D52 (Warm Terracotta Rose)",
+      "primary_hover": "#C94A40",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#F3EDE4 (Soft Oat)",
+      "secondary_hover": "#E6DDD0",
+      "accent_sage": "#8FA382 (Soft Eucalyptus / Sage)",
+      "accent_peach": "#FFDEC9",
+      "text_main": "#2C221E (Deep Warm Espresso)",
+      "text_muted": "#786C66",
+      "border": "#E8E2D9"
+    },
+    "dark_mode": {
+      "background": "#1A1513 (Deep Espresso Void)",
+      "surface_card": "#261F1C with 1px border #3D332E",
+      "surface_glass": "bg-stone-900/80 backdrop-blur-md border border-stone-800",
+      "primary": "#F07368 (Bright Terracotta)",
+      "text_main": "#F5EFEA",
+      "border": "#3D332E"
+    },
+    "contrast_rule": "Ensure minimum 4.5:1 contrast ratio. Never use transparent background on dropdowns or floating overlays - always use blur + semi-opaque white/dark surface with 1px border."
+  },
+  "layout_and_navigation": {
+    "app_shell": "Mobile-first responsive shell with sticky header and floating bottom navigation tab bar (Calendar, Chat, Gallery) with top right status showing connected partner avatar / status",
+    "header": "Glassmorphism sticky top bar (`bg-amber-50/80 backdrop-blur-xl border-b border-amber-200/40 z-40`). Must include brand name 'We2gether' with pairing code badge and partner status indicator.",
+    "pairing_screen": "Hero card layout for non-paired state: Option A 'Create Pairing Code' (generates 6-char code e.g. TOE2S6 with easy 1-tap copy button) and Option B 'Enter Pairing Code' (input box with instant join action). Includes quick visual preview of shared space features.",
+    "bottom_navigation": "Pill-shaped floating navigation bar on mobile & sticky desktop sidebar/bottom bar. Icons: Calendar (Events), Chat (Messages + Quick Reactions), Gallery (Moments). Highlight active tab with glowing terracotta accent."
+  },
+  "key_features_ui_spec": {
+    "pairing_flow": {
+      "create_code": "Shows prominent 6-character code with copy button, share link button, and pulsing waiting state ('Waiting for your partner to enter code...')",
+      "enter_code": "6-character uppercase input field with instant validation and 'Connect Space' action button.",
+      "paired_banner": "Subtle top banner showing both partner avatars/initials linked with a heart / infinity icon."
+    },
+    "calendar_tab": {
+      "library": "react-big-calendar month grid with custom CSS overrides for soft rounded days and terracotta event pills",
+      "add_event_modal": "Shadcn Dialog form containing Event Title, Start Date/Time, End Date/Time, Timezone display indicator, Category tag (Date Night, Anniversary, Trip, Reminder, Chore), and Note text area.",
+      "delete_event": "Confirmation dialog with smooth toast notification via sonner.",
+      "timezone_note": "Display explicit timezone notice so events align correctly between users in different zones."
+    },
+    "chat_tab": {
+      "thread_view": "Vertical scroll message thread with smooth auto-scroll to latest message.",
+      "message_bubbles": {
+        "user_sent": "Terracotta pill (`bg-rose-600 text-white rounded-2xl rounded-tr-xs`) aligned right",
+        "partner_received": "Oat warm pill (`bg-stone-200 dark:bg-stone-800 text-stone-900 dark:text-stone-100 rounded-2xl rounded-tl-xs`) aligned left"
+      },
+      "chat_features": "Timestamp display, simple heart reaction on double tap / long press, photo attachment quick preview.",
+      "input_bar": "Sticky bottom input field with image pick icon, emoji picker button, and send button with keyboard send on Enter."
+    },
+    "gallery_tab": {
+      "upload_area": "Drag-and-drop / click photo uploader supporting real image files (JPEG, PNG, WebP) with client-side preview, progress bar, and instant grid sync.",
+      "photo_grid": "Masonry or balanced Bento grid (3-4 columns desktop, 2 columns mobile) with hover zoom, upload date tag, caption overlay, and click-to-lightbox viewer.",
+      "lightbox_modal": "Full-screen photo viewer with download button, upload timestamp, photo caption, and delete photo button."
+    }
+  },
+  "image_urls": {
+    "hero_couple_portrait": "https://images.unsplash.com/photo-1653765000011-de1f5cad4fba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHszfHxjb3p5JTIwY291cGxlJTIwcG9ydHJhaXQlMjBzdW5zZXQlMjBkYXRlfGVufDB8fHx8MTc4OTk3NzY1OXww&ixlib=rb-4.1.0&q=85",
+    "polaroid_memories": "https://images.pexels.com/photos/296649/pexels-photo-296649.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "collage_memories": "https://images.pexels.com/photos/10272676/pexels-photo-10272676.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "couple_silhouette": "https://images.unsplash.com/photo-1494774157365-9e04c6720e47?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHxfHxjb3p5JTIwY291cGxlJTIwcG9ydHJhaXQlMjBzdW5zZXQlMjBkYXRlfGVufDB8fHx8MTc4OTk3NzY1OXww&ixlib=rb-4.1.0&q=85"
+  },
+  "testing_requirements": {
+    "data_testid_rule": "ALL interactive and key informational elements MUST include kebab-case data-testid attributes",
+    "critical_test_ids": [
+      "pairing-create-code-button",
+      "pairing-code-display",
+      "pairing-code-input",
+      "pairing-join-button",
+      "pairing-status-badge",
+      "nav-tab-calendar",
+      "nav-tab-chat",
+      "nav-tab-gallery",
+      "calendar-add-event-button",
+      "calendar-event-modal",
+      "calendar-event-title-input",
+      "calendar-event-start-input",
+      "calendar-event-end-input",
+      "calendar-event-submit-button",
+      "calendar-event-delete-button",
+      "chat-message-input",
+      "chat-send-button",
+      "chat-message-item",
+      "gallery-upload-input",
+      "gallery-upload-button",
+      "gallery-photo-item",
+      "gallery-photo-delete-button"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Use JavaScript (.js / .jsx) components as per project convention.",
+    "Implement persistent or mock API layer for pairing code generation, event CRUD, chat messaging, and gallery image upload.",
+    "Use Sonner for toast feedback (e.g. 'Code copied to clipboard', 'Event added successfully', 'Image uploaded').",
+    "Ensure responsiveness on mobile viewports (< 640px) with bottom tab navigation bar.",
+    "Add empty, loading, and error states with heartwarming micro-copy and warm illustrations or icons."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Do NOT center align the entire app container (.App { text-align: center; }).",
+    "Never use generic raw text inputs for dropdowns or dates where rich components exist.",
+    "Maintain generous padding inside cards and containers (p-4 to p-8).",
+    "Add transition effects for state changes (e.g., hover states, active tabs, modal openings).",
+    "Ensure code is clean, modular, and ready for production testing."
+  ]
+}
