@@ -11,12 +11,13 @@ import { usesNativeTabs } from "@/src/navigation";
 import { useAuth } from "@/src/auth";
 import { haptic } from "@/src/haptics";
 import { MoodSheet } from "@/src/components/MoodSheet";
+import { ukDaysSince } from "@/src/ukTime";
 
 function daysSince(dateStr?: string) {
-  if (!dateStr) return 0;
-  const start = new Date(dateStr + "T00:00:00");
-  const diff = Date.now() - start.getTime();
-  return Math.max(0, Math.floor(diff / 86400000));
+  // Counted in UK calendar days, matching the backend's uk_today() — so
+  // the count doesn't jump around depending on which partner's phone (and
+  // timezone) happens to be looking at it.
+  return ukDaysSince(dateStr);
 }
 
 function MoodCard({ name, mood, isMe, onSet }: any) {
