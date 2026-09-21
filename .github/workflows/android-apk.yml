@@ -11,6 +11,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: frontend
@@ -39,17 +40,17 @@ jobs:
       - name: Generate native Android project
         env:
           EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL }}
+          EXPO_PUBLIC_GIPHY_API_KEY: ${{ secrets.GIPHY_API_KEY }}
         run: npx expo prebuild --platform android --non-interactive
 
-      # Builds the "release" variant, not "debug" -- a plain debug APK expects
-      # a live Metro server and won't run standalone once sideloaded. Release
-      # embeds the JS bundle so the APK works with no dev server attached.
-      # The RN template's release build type is signed with the debug
-      # keystore by default, so this still installs fine without real signing.
+      # Builds the release variant, not debug.
+      # The JS bundle is embedded into the APK so it works
+      # standalone without a Metro development server.
       - name: Build APK
         working-directory: frontend/android
         env:
           EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL }}
+          EXPO_PUBLIC_GIPHY_API_KEY: ${{ secrets.GIPHY_API_KEY }}
         run: |
           chmod +x ./gradlew
           ./gradlew assembleRelease
