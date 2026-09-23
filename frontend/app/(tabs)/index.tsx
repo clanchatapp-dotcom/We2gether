@@ -11,6 +11,8 @@ import { usesNativeTabs } from "@/src/navigation";
 import { useAuth } from "@/src/auth";
 import { haptic } from "@/src/haptics";
 import { MoodSheet } from "@/src/components/MoodSheet";
+import { AnniversarySheet } from "@/src/components/AnniversarySheet";
+import { prettyDate } from "@/src/uk-date";
 
 function daysSince(dateStr?: string) {
   if (!dateStr) return 0;
@@ -53,6 +55,7 @@ export default function Home() {
   const router = useRouter();
   const { signOut } = useAuth();
   const [sheet, setSheet] = useState(false);
+  const [annivSheet, setAnnivSheet] = useState(false);
 
   const bottomChrome = usesNativeTabs ? insets.bottom : 0;
 
@@ -66,6 +69,7 @@ export default function Home() {
   }
 
   const couple = meQ.data;
+  const anniversary = couple?.anniversary_date || couple?.since_date;
   const moods = moodsQ.data?.moods || {};
   const myMood = couple?.me ? moods[couple.me.user_id] : null;
   const partnerMood = couple?.partner ? moods[couple.partner.user_id] : null;
@@ -83,11 +87,18 @@ export default function Home() {
         refreshControl={undefined}
       >
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.hello}>together since</Text>
-            <Text style={styles.since}>{couple?.since_date || "today"}</Text>
-            <Text style={styles.days}>{daysSince(couple?.since_date)} days of us 💞</Text>
-          </View>
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={() => { haptic.light(); setAnnivSheet(true); }}
+            testID="anniversary-btn"
+          >
+            <View style={styles.sinceRow}>
+              <Text style={styles.hello}>together since</Text>
+              <Feather name="edit-2" size={13} color={colors.brandPrimary} />
+            </View>
+            <Text style={styles.since}>{anniversary ? prettyDate(anniversary) : "tap to set"}</Text>
+            <Text style={styles.days}>{daysSince(anniversary)} days of us 💞</Text>
+          </Pressable>
           <Pressable style={styles.signOut} onPress={() => { haptic.light(); signOut(); }} testID="sign-out-btn">
             <Feather name="log-out" size={18} color={colors.muted} />
           </Pressable>
@@ -139,6 +150,11 @@ export default function Home() {
       </ScrollView>
 
       <MoodSheet visible={sheet} onClose={() => setSheet(false)} />
+      <AnniversarySheet
+        visible={annivSheet}
+        initialDate={anniversary}
+        onClose={() => setAnnivSheet(false)}
+      />
     </View>
   );
 }
@@ -147,8 +163,9 @@ const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: c.surface },
   headerRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: spacing.xl },
+  sinceRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   hello: { fontFamily: "Caveat", fontSize: 22, color: c.brandPrimary },
-  since: { fontFamily: "Fraunces", fontSize: 34, fontWeight: "700", color: c.onSurface },
+  since: { fontFamily: "Fraunces", fontSize: 28, fontWeight: "700", color: c.onSurface },
   days: { fontFamily: "Nunito", fontSize: 14, color: c.onSurfaceTertiary, marginTop: 2 },
   signOut: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: c.surfaceSecondary },
   inviteCard: {

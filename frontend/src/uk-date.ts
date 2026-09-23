@@ -59,6 +59,17 @@ export function dayLabelUK(s: string): string {
   }).format(d);
 }
 
+// A friendly display of a YYYY-MM-DD date, e.g. "21 September 2026".
+export function prettyDate(s: string): string {
+  const d = new Date(`${s}T00:00:00Z`);
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+}
+
 // A wall-clock time (HH:mm) rendered in UK time from an ISO timestamp.
 export function ukTime(iso: string): string {
   try {

@@ -191,6 +191,10 @@ class ReadIn(BaseModel):
     message_ids: Optional[list[str]] = None
 
 
+class AnniversaryIn(BaseModel):
+    date: str  # YYYY-MM-DD
+
+
 # ---------------------------------------------------------------------------
 # Auth helper
 # ---------------------------------------------------------------------------
@@ -211,6 +215,7 @@ async def couple_public(couple, me_id):
         "couple_id": couple["id"],
         "code": couple["code"],
         "since_date": couple.get("since_date"),
+        "anniversary_date": couple.get("anniversary_date") or couple.get("since_date"),
         "me": me,
         "partner": partner,
         "paired": len(members) >= 2,
@@ -251,6 +256,7 @@ async def create_couple(body: CreateCoupleIn):
         "id": couple_id,
         "code": code,
         "since_date": uk_today(),
+        "anniversary_date": uk_today(),
         "members": [member],
         "created_at": now_iso(),
         "deleted_at": None,
@@ -292,6 +298,58 @@ async def get_me(x_user_id: Optional[str] = Header(None)):
     if not couple:
         raise HTTPException(status_code=404, detail="Space not found")
     return {"user_id": user["id"], **(await couple_public(couple, user["id"]))}
+
+
+@api_router.post("/couples/anniversary")
+async def set_anniversary(body: AnniversaryIn, x_user_id: Optional[str] = Header(None)):
+    """Set the couple's shared anniversary date (the 'together since' date on
+    the home screen). Either partner can edit it; it must not be in the future."""
+    user = await get_user(x_user_id)
+    date = (body.date or "").strip()
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    if date > uk_today():
+        raise HTTPException(status_code=400, detail="Anniversary can't be in the future")
+    couple = await db.couples.find_one({"id": user["couple_id"], "deleted_at": None})
+    if not couple:
+        raise HTTPException(status_code=404, detail="Space not found")
+    await db.couples.update_one({"id": user["couple_id"]}, {"$set": {"anniversary_date": date}})
+    couple = await db.couples.find_one({"id": user["couple_id"], "deleted_at": None})
+    return {"user_id": user["id"], **(await couple_public(couple, user["id"]))}
+
+
+# ---------------------------------------------------------------------------
+# Typing indicator (best-effort, ephemeral). A partner is "typing" if they
+# pinged within the last few seconds.
+# ---------------------------------------------------------------------------
+@api_router.post("/typing")
+async def set_typing(x_user_id: Optional[str] = Header(None)):
+    user = await get_user(x_user_id)
+    await db.typing.update_one(
+        {"couple_id": user["couple_id"], "user_id": user["id"]},
+        {"$set": {"couple_id": user["couple_id"], "user_id": user["id"], "updated_at": now_iso()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.get("/typing")
+async def get_typing(x_user_id: Optional[str] = Header(None)):
+    user = await get_user(x_user_id)
+    partners = await partner_user_ids(user["couple_id"], user["id"])
+    if not partners:
+        return {"partner_typing": False}
+    doc = await db.typing.find_one({"couple_id": user["couple_id"], "user_id": {"$in": partners}})
+    typing = False
+    if doc and doc.get("updated_at"):
+        try:
+            ts = datetime.fromisoformat(doc["updated_at"])
+            typing = (datetime.now(timezone.utc) - ts).total_seconds() < 6
+        except Exception:
+            typing = False
+    return {"partner_typing": typing}
 
 
 # ---------------------------------------------------------------------------

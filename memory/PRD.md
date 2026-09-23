@@ -43,6 +43,17 @@ in this workspace and fix 4 issues, keeping the app otherwise identical:
   rules, register-push, regression). Frontend web smoke test clean (onboarding, chat
   send + "Sent" receipt, calendar). No blocking issues.
 
+## Features added (2026-06, session 2)
+- **Typing indicator:** backend `POST /api/typing` (throttled ping) + `GET /api/typing`
+  → `{partner_typing}` (true only if the OTHER member pinged within ~6s). Chat shows an
+  animated three-dot bubble (`src/components/TypingDots.tsx`, testID=typing-indicator)
+  above the input while the partner types. Polls every 2.5s.
+- **Editable anniversary date:** couple gains `anniversary_date` (falls back to since_date).
+  `POST /api/couples/anniversary {date}` (future rejected). Home "together since" block is
+  tappable (testID=anniversary-btn) → `AnniversarySheet` Month/Day/Year chip picker; date
+  shown as "15 June 2020" and "X days of us" recalculated from it. All in the existing theme.
+- Verified: backend 21/21 pytest, frontend both flows + full regression green.
+
 ## Backlog / next
 - P1: Push only works after deploy + native build with the user's google-services.json.
 - P2: Consider splitting server.py into feature routers as the app grows.

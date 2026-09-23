@@ -24,6 +24,7 @@ import { usesNativeTabs } from "@/src/navigation";
 import { haptic } from "@/src/haptics";
 import { useToast } from "@/src/components/Toast";
 import { MediaViewer, ViewerItem } from "@/src/components/MediaViewer";
+import { TypingDots } from "@/src/components/TypingDots";
 import { ukTime } from "@/src/uk-date";
 
 type Msg = {
@@ -121,6 +122,25 @@ export default function Chat() {
       .then(() => qc.invalidateQueries({ queryKey: ["messages"] }))
       .catch(() => {});
   }, [screenFocused, appActive, msgsQ.data, qc]);
+
+  // Typing indicator: ping the backend (throttled) as I type, and poll the
+  // partner's typing state while the chat is open.
+  const lastTypingSent = useRef(0);
+  const notifyTyping = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTypingSent.current > 2500) {
+      lastTypingSent.current = now;
+      api.post("/typing", {}).catch(() => {});
+    }
+  }, []);
+
+  const typingQ = useQuery<{ partner_typing: boolean }>({
+    queryKey: ["typing"],
+    queryFn: () => api.get("/typing"),
+    refetchInterval: 2500,
+    enabled: screenFocused && appActive,
+  });
+  const partnerTyping = !!typingQ.data?.partner_typing;
 
   const sendText = async () => {
     const t = text.trim();
@@ -315,6 +335,14 @@ export default function Chat() {
           />
         )}
 
+        {partnerTyping ? (
+          <View style={styles.typingRow} testID="typing-indicator">
+            <View style={[styles.bubble, styles.bubbleTheirs, styles.typingBubble]}>
+              <TypingDots color={colors.muted} />
+            </View>
+          </View>
+        ) : null}
+
         <View style={[styles.inputBar, { paddingBottom: (usesNativeTabs ? insets.bottom : spacing.sm) }]}>
           <Pressable style={styles.attachBtn} onPress={() => { haptic.light(); setAttachOpen(true); }} testID="attach-btn">
             <Feather name="plus" size={22} color={colors.brandPrimary} />
@@ -325,7 +353,7 @@ export default function Chat() {
             placeholder="Write something sweet..."
             placeholderTextColor={colors.muted}
             value={text}
-            onChangeText={setText}
+            onChangeText={(t) => { setText(t); if (t.trim()) notifyTyping(); }}
             multiline
           />
           <Pressable style={styles.sendBtn} onPress={sendText} disabled={sending || !text.trim()} testID="send-btn">
@@ -486,6 +514,8 @@ const useStyles = makeStyles((c) => ({
   seenBadge: { position: "absolute", bottom: spacing.sm, right: spacing.sm, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   seenText: { fontFamily: "Nunito", fontSize: 11, fontWeight: "700", color: "#FFFFFF" },
   readReceipt: { fontFamily: "Nunito", fontSize: 11, color: c.muted, marginTop: 3, marginRight: spacing.xs },
+  typingRow: { alignSelf: "flex-start", marginHorizontal: spacing.lg, marginBottom: spacing.sm },
+  typingBubble: { paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
   oneTimeCard: { width: 200, height: 120, alignItems: "center", justifyContent: "center", gap: spacing.sm },
   oneTimeText: { fontFamily: "Nunito", fontSize: 14, fontWeight: "700" },
   inputBar: {

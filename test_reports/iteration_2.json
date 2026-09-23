@@ -1,0 +1,30 @@
+{
+  "summary": "New features Anniversary (B) and Typing indicator (A) verified end-to-end plus full regression. Backend: 21/21 pytest pass (added test_new_features.py with 8 cases). Anniversary: POST /api/couples/anniversary accepts YYYY-MM-DD, rejects future dates (400) and bad format (400), GET /api/couples/me returns anniversary_date shared across both partners and falls back to since_date for new couples. Typing: POST /api/typing pings, GET /api/typing returns partner_typing=true within ~6s window and false otherwise, self never appears as their own partner, indicator expires after ~6s. Regression: couples create/join/me, chat text, moods, worries+comments, media upload (png/gif/mp4), UK calendar (today+future OK, past 400, delete author-only 403), read receipts sent→delivered→read, register-push all pass. Frontend (mobile viewport 375x667): Tom creates space → home shows editable 'together since' block (testID=anniversary-btn); tapping opens bottom sheet titled 'When did your story begin?' with month/day/year chip strips (anniv-month-5, anniv-day-15, anniv-year-2020) and Save (anniv-save-btn). Picking 15 June 2020 saves and the home immediately re-renders to '15 June 2020' with '2291 days of us 💞'. Chat: with Eva paired via backend, POST /api/typing as Eva makes testID=typing-indicator appear above the input within ~2.5s; when Eva stops, indicator clears within the poll window; when Tom types into testID=chat-input he never sees his own typing bubble. No deprecated Expo packages (no expo-av / expo-barcode-scanner / expo-background-fetch). No React Native red screen, no console pageerrors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_we2gether_backend.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~860 lines; consider splitting into routers (couples, messages, events, moods, worries, typing) before it grows further.",
+    "GET /api/typing is polled every 2.5s per client — fine for MVP, but consider SSE/WebSocket later to reduce load.",
+    "The typing collection has no TTL index; expired docs remain in Mongo forever. Add a TTL index on updated_at (converted to Date) or run a periodic cleanup — currently just cosmetic since the read-side compares timestamps."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (new)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% (Anniversary + Typing flows verified)"},
+  "seed_data_creation": "Fresh TEST_Alex/TEST_Masha couple via /api/couples/create + /api/couples/join per pytest session; TEST_Tom + TEST_Eva pair created during Playwright run and interacted with via /api/typing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend suite lives in /app/backend/tests/; run with `pytest tests/ -v` from /app/backend. Anniversary format is strictly YYYY-MM-DD; future dates return 400. Typing TTL is 6s so poll windows should be >= 3s for stability. In Playwright, horizontal ScrollView chips render outside viewport — use a JS helper that calls el.scrollIntoView({inline:'center'}) then el.click() instead of page.click(force=True), which still fails with 'outside of viewport'. The invite card's testID=couple-code holds the 6-char pairing code, which the test used to pair Eva via /api/couples/join and then drive typing from the server side while the browser stayed logged in as Tom."
+}
