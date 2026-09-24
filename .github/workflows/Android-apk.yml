@@ -1,0 +1,73 @@
+name: Android APK
+
+# Manual trigger only. Run it from the repo's "Actions" tab -> "Android APK" -> "Run workflow".
+on:
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: "Backend URL baked into the app (leave blank to use the default)"
+        required: false
+        default: "https://we2gether.onrender.com"
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    env:
+      # Inlined into the JS bundle at build time (Expo reads EXPO_PUBLIC_* from the env).
+      # Falls back to the deployed backend when the manual input is left blank.
+      EXPO_PUBLIC_BACKEND_URL: ${{ github.event.inputs.backend_url || 'https://we2gether.onrender.com' }}
+      EXPO_NO_TELEMETRY: "1"
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "yarn"
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "gradle"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Ensure guard scripts are executable
+        run: chmod +x scripts/cmd-guard.js scripts/*.sh || true
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Prebuild native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      # assembleRelease => a single, self-contained APK with the JS bundle embedded,
+      # signed with the auto-generated debug keystore so it installs on any phone
+      # without a running Metro dev server. Swap to a real keystore before you publish.
+      - name: Build APK
+        working-directory: frontend/android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: We2gether-apk
+          path: frontend/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
