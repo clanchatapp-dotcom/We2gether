@@ -36,8 +36,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "yarn"
-          cache-dependency-path: frontend/yarn.lock
+
+      # Cache the Yarn download cache. Keyed on package.json (always present) so it
+      # never hard-fails even if yarn.lock isn't committed to the repo.
+      - name: Cache Yarn cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/yarn
+          key: yarn-${{ runner.os }}-${{ hashFiles('frontend/yarn.lock', 'frontend/package.json') }}
+          restore-keys: |
+            yarn-${{ runner.os }}-
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -52,8 +60,10 @@ jobs:
       - name: Ensure guard scripts are executable
         run: chmod +x scripts/cmd-guard.js scripts/*.sh || true
 
+      # Not --frozen-lockfile: the build must succeed whether or not a yarn.lock is
+      # committed. Yarn uses the committed lockfile when present, otherwise resolves fresh.
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --network-timeout 600000
 
       - name: Prebuild native Android project
         run: npx expo prebuild --platform android --no-install
