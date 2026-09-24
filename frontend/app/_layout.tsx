@@ -16,6 +16,7 @@ import { queryClient } from "@/src/query-client";
 import { AuthProvider, useAuth } from "@/src/auth";
 import { ToastProvider } from "@/src/components/Toast";
 import { PushManager } from "@/src/push";
+import { BackendHealth } from "@/src/components/BackendHealth";
 import { useTheme } from "@/src/theme";
 
 LogBox.ignoreAllLogs(true);
@@ -118,6 +119,7 @@ export default function RootLayout() {
                 <ToastProvider>
                   <ThemedStack />
                   <PushManager />
+                  <BackendHealth />
                 </ToastProvider>
               </KeyboardProvider>
             </AuthProvider>

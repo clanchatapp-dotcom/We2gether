@@ -1,7 +1,10 @@
 name: Android APK
 
-# Manual trigger only. Run it from the repo's "Actions" tab -> "Android APK" -> "Run workflow".
+# Runs automatically on every push to the main branch (fresh APK each time),
+# and can also be started manually from the repo's "Actions" tab -> "Android APK".
 on:
+  push:
+    branches: [main, master]
   workflow_dispatch:
     inputs:
       backend_url:

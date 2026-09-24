@@ -72,6 +72,19 @@ in this workspace and fix 4 issues, keeping the app otherwise identical:
   frozen-lockfile OK, backend URL confirmed inlined into the bundle. gradle assembleRelease
   itself runs on GitHub's x86 runner (no Android SDK / working Hermes in this container).
 
+## Session 4 (2026-06): auto-build on push + backend health banner
+- **Auto APK on push:** `.github/workflows/Android-apk.yml` now triggers on `push` to
+  `main`/`master` (plus the existing manual `workflow_dispatch`), so every push produces a
+  fresh `We2gether-apk` artifact. `concurrency` cancels superseded runs.
+- **Backend health warning:** `src/components/BackendHealth.tsx` (mounted in `_layout`)
+  pings `GET /api/` via new `pingBackend()` in `src/api.ts` on launch and on every
+  foreground. Silent when reachable; if the Render backend is asleep/unreachable it shows a
+  themed warning banner ("Can't reach the server — it may be waking up. Retrying…") with a
+  Retry button, retries every 4s, and auto-hides the moment the server responds. 25s ping
+  timeout to tolerate Render cold starts. testIDs: backend-health-banner/-text/-retry.
+- Verified: banner absent when backend up (no false alarm), renders correctly when down;
+  lint clean, workflow YAML valid.
+
 ## Backlog / next
 - P1: Push only works after deploy + native build with the user's google-services.json.
 - P1: For a signed/publishable APK, replace the debug keystore with a real release keystore.

@@ -145,3 +145,20 @@ export function mediaVideoUri(path: string) {
   }
   return `${BASE}/api/files/${path}`;
 }
+
+// Lightweight reachability check for the backend. Render free instances sleep
+// after inactivity and can take up to ~50s to wake, so the caller uses a long
+// timeout and retries. Returns true only on a 2xx from GET /api/.
+export async function pingBackend(timeoutMs = 25000): Promise<boolean> {
+  if (!BASE) return false;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${BASE}/api/`, { method: "GET", signal: ctrl.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
