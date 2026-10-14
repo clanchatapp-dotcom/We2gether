@@ -1,250 +1,181 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   Pressable,
   FlatList,
-  Modal,
   TextInput,
   ActivityIndicator,
-  RefreshControl,
-  ScrollView,
 } from "react-native";
-import { Image } from "expo-image";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@react-native-vector-icons/feather";
-import { format, addDays, parseISO } from "date-fns";
+import { format, startOfWeek, addDays, parseISO } from "date-fns";
+import * as SecureStore from "expo-secure-store";
 
 import { makeStyles, spacing, radius, useTheme } from "@/src/theme";
-import { api } from "@/src/api";
-import { usesNativeTabs } from "@/src/navigation";
-import { haptic } from "@/src/haptics";
-import { useToast } from "@/src/components/Toast";
-import { ukTodayISO, isoToLocalDate } from "@/src/ukTime";
+import { ukTodayISO } from "@/src/ukTime";
 
-type EventItem = {
+type TodoItem = {
   id: string;
-  title: string;
-  note?: string;
-  event_date: string; // YYYY-MM-DD
-  author_name: string;
-  is_mine: boolean;
+  text: string;
+  completed: boolean;
   created_at: string;
 };
 
-type Row =
-  | { kind: "header"; key: string; date: string }
-  | { kind: "event"; key: string; event: EventItem };
-
-const EMPTY_IMG =
-  "https://images.unsplash.com/photo-1506784983877-45594efa4cbe?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwxfHxjYWxlbmRhciUyMHBsYW5uZXIlMjBhZXN0aGV0aWN8ZW58MHx8fHwxNzg5ODEwMTM3fDA&ixlib=rb-4.1.0&q=85";
-
-function dayLabel(dateStr: string, todayISO: string, tomorrowISO: string) {
-  const d = parseISO(dateStr);
-  if (dateStr === todayISO) return `Today · ${format(d, "EEE d MMM")}`;
-  if (dateStr === tomorrowISO) return `Tomorrow · ${format(d, "EEE d MMM")}`;
-  return format(d, "EEEE · d MMM yyyy");
-}
-
-// A cross-platform date strip: UK-today + next 89 days (events auto-expire
-// in the past anyway, so there's no reason to pick a past date).
-function buildDateOptions() {
-  const start = isoToLocalDate(ukTodayISO());
-  return Array.from({ length: 90 }, (_, i) => {
-    const d = addDays(start, i);
-    return { value: format(d, "yyyy-MM-dd"), label: format(d, "EEE"), day: format(d, "d"), mon: format(d, "MMM") };
-  });
+function weekStartISO(todayISO: string) {
+  const d = parseISO(todayISO);
+  const s = startOfWeek(d, { weekStartsOn: 1 });
+  return format(s, "yyyy-MM-dd");
 }
 
 export default function Calendar() {
   const styles = useStyles();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const qc = useQueryClient();
-  const toast = useToast();
 
-  const dateOptions = useMemo(() => buildDateOptions(), []);
-  const todayISO = dateOptions[0].value;
-  const tomorrowISO = dateOptions[1]?.value ?? todayISO;
+  const todayISO = ukTodayISO();
+  const weekStart = useMemo(() => weekStartISO(todayISO), [todayISO]);
+  const weekEnd = useMemo(
+    () => format(addDays(parseISO(weekStart), 6), "d MMM"),
+    [weekStart],
+  );
+  const storageKey = `weekly-todo:${weekStart}`;
 
-  const [compose, setCompose] = useState(false);
-  const [title, setTitle] = useState("");
-  const [note, setNote] = useState("");
-  const [date, setDate] = useState(dateOptions[0].value);
-  const [posting, setPosting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState<TodoItem[]>([]);
+  const [text, setText] = useState("");
 
-  const bottomChrome = usesNativeTabs ? insets.bottom : 0;
-  const q = useQuery<EventItem[]>({ queryKey: ["events"], queryFn: () => api.get("/events"), refetchInterval: 8000 });
-  const events = useMemo(() => q.data || [], [q.data]);
+  useEffect(() => {
+    let mounted = true;
 
-  const rows: Row[] = useMemo(() => {
-    const out: Row[] = [];
-    let lastDate = "";
-    for (const e of events) {
-      if (e.event_date !== lastDate) {
-        out.push({ kind: "header", key: `h-${e.event_date}`, date: e.event_date });
-        lastDate = e.event_date;
+    (async () => {
+      try {
+        const saved = await SecureStore.getItemAsync(storageKey);
+        if (mounted) {
+          setTasks(saved ? JSON.parse(saved) : []);
+        }
+      } catch (error) {
+        console.warn("Could not load weekly to-do list", error);
+        if (mounted) setTasks([]);
+      } finally {
+        if (mounted) setLoading(false);
       }
-      out.push({ kind: "event", key: e.id, event: e });
-    }
-    return out;
-  }, [events]);
+    })();
 
-  const openCompose = () => {
-    haptic.light();
-    setTitle("");
-    setNote("");
-    setDate(dateOptions[0].value);
-    setCompose(true);
-  };
+    return () => {
+      mounted = false;
+    };
+  }, [storageKey]);
 
-  const post = async () => {
-    const t = title.trim();
-    if (!t) { toast.show("Give your event a title"); return; }
-    setPosting(true);
-    haptic.medium();
+  const saveTasks = async (next: TodoItem[]) => {
+    setTasks(next);
     try {
-      await api.post("/events", { title: t, note: note.trim(), event_date: date });
-      setCompose(false);
-      qc.invalidateQueries({ queryKey: ["events"] });
-    } catch (e: any) {
-      toast.show(e?.message || "Could not add your event");
-    } finally {
-      setPosting(false);
+      await SecureStore.setItemAsync(storageKey, JSON.stringify(next));
+    } catch (error) {
+      console.warn("Could not save weekly to-do list", error);
     }
   };
 
-  const remove = async (item: EventItem) => {
-    haptic.light();
-    try {
-      await api.del(`/events/${item.id}`);
-      qc.invalidateQueries({ queryKey: ["events"] });
-    } catch (e: any) {
-      toast.show(e?.message || "Could not remove event");
-    }
+  const addTask = async () => {
+    const value = text.trim();
+    if (!value) return;
+
+    const item: TodoItem = {
+      id: `${Date.now()}`,
+      text: value,
+      completed: false,
+      created_at: new Date().toISOString(),
+    };
+
+    setText("");
+    await saveTasks([item, ...tasks]);
   };
 
-  const renderRow = ({ item }: { item: Row }) => {
-    if (item.kind === "header") {
-      return (
-        <View style={styles.dayHeader}>
-          <Feather name="calendar" size={14} color={colors.brandPrimary} />
-          <Text style={styles.dayHeaderText}>{dayLabel(item.date, todayISO, tomorrowISO)}</Text>
-        </View>
-      );
-    }
-    const e = item.event;
-    return (
-      <View style={styles.card} testID={`event-${e.id}`}>
-        <View style={[styles.accent, e.is_mine ? styles.accentMine : styles.accentTheirs]} />
-        <View style={styles.cardBody}>
-          <Text style={styles.eventTitle}>{e.title}</Text>
-          {e.note ? <Text style={styles.eventNote}>{e.note}</Text> : null}
-          <View style={styles.authorRow}>
-            <View style={[styles.dot, e.is_mine ? styles.dotMine : styles.dotTheirs]} />
-            <Text style={styles.author}>added by {e.author_name}</Text>
-          </View>
-        </View>
-        {e.is_mine ? (
-          <Pressable style={styles.deleteBtn} onPress={() => remove(e)} testID={`event-delete-${e.id}`} hitSlop={8}>
-            <Feather name="trash-2" size={18} color={colors.muted} />
-          </Pressable>
-        ) : null}
-      </View>
+  const toggleTask = async (id: string) => {
+    const next = tasks.map((task) =>
+      task.id === id ? { ...task, completed: !task.completed } : task,
     );
+    await saveTasks(next);
   };
 
-  const selected = dateOptions.find((d) => d.value === date);
+  const removeTask = async (id: string) => {
+    const next = tasks.filter((task) => task.id !== id);
+    await saveTasks(next);
+  };
+
+  const clearWeek = async () => {
+    await saveTasks([]);
+  };
+
+  const renderItem = ({ item }: { item: TodoItem }) => (
+    <View style={styles.card} testID={`todo-${item.id}`}>
+      <Pressable onPress={() => toggleTask(item.id)} style={styles.check} testID={`todo-toggle-${item.id}`}>
+        <View style={[styles.checkBox, item.completed && styles.checkedBox]}>
+          {item.completed ? <Feather name="check" size={14} color={colors.onBrandPrimary} /> : null}
+        </View>
+      </Pressable>
+
+      <View style={styles.cardBody}>
+        <Text style={[styles.taskText, item.completed && styles.taskCompleted]}>{item.text}</Text>
+      </View>
+
+      <Pressable onPress={() => removeTask(item.id)} style={styles.deleteBtn} testID={`todo-delete-${item.id}`}>
+        <Feather name="trash-2" size={18} color={colors.muted} />
+      </Pressable>
+    </View>
+  );
 
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
-        <Text style={styles.hello}>things to look forward to</Text>
-        <Text style={styles.title}>Calendar</Text>
+        <Text style={styles.hello}>weekly</Text>
+        <Text style={styles.title}>To do</Text>
+        <Text style={styles.sub}>
+          Week of {weekStart} to {weekEnd}
+        </Text>
       </View>
 
-      {q.isLoading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brandPrimary} /></View>
-      ) : events.length === 0 ? (
+      {loading ? (
         <View style={styles.center}>
-          <Image source={{ uri: EMPTY_IMG }} style={styles.emptyImg} contentFit="cover" />
-          <Text style={styles.emptyTitle}>Nothing planned yet</Text>
-          <Text style={styles.emptySub}>Add a date night, trip or reminder — your partner will see it too.</Text>
+          <ActivityIndicator color={colors.brandPrimary} />
         </View>
       ) : (
         <FlatList
-          data={rows}
-          keyExtractor={(r) => r.key}
-          renderItem={renderRow}
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: bottomChrome + 96 }}
+          data={tasks}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 120 }}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => q.refetch()} tintColor={colors.brandPrimary} />}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyWrap}>
+              <Feather name="clipboard" size={54} color={colors.muted} />
+              <Text style={styles.emptyTitle}>Nothing planned this week</Text>
+              <Text style={styles.emptySub}>Add a task. It will reset automatically when the week changes.</Text>
+            </View>
+          )}
         />
       )}
 
-      <Pressable
-        style={[styles.fab, { bottom: bottomChrome + spacing.lg }]}
-        onPress={openCompose}
-        testID="add-event-btn"
-      >
-        <Feather name="plus" size={18} color={colors.onBrandPrimary} />
-        <Text style={styles.fabText}>Add event</Text>
-      </Pressable>
+      <View style={[styles.composer, { paddingBottom: insets.bottom + spacing.lg }]}>
+        <TextInput
+          testID="todo-input"
+          style={styles.input}
+          placeholder="Add a task"
+          placeholderTextColor={colors.muted}
+          value={text}
+          onChangeText={setText}
+          onSubmitEditing={addTask}
+          returnKeyType="done"
+        />
 
-      <Modal visible={compose} transparent animationType="slide" onRequestClose={() => setCompose(false)}>
-        <Pressable style={styles.sheetBackdrop} onPress={() => setCompose(false)} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <View style={styles.grabber} />
-          <Text style={styles.sheetTitle}>{"What's coming up?"}</Text>
-          <KeyboardAwareScrollView bottomOffset={16} showsVerticalScrollIndicator={false}>
-            <TextInput
-              testID="event-title-input"
-              style={styles.input}
-              placeholder="Event title (e.g. Anniversary dinner)"
-              placeholderTextColor={colors.muted}
-              value={title}
-              onChangeText={setTitle}
-              maxLength={80}
-              autoFocus
-            />
-            <TextInput
-              testID="event-note-input"
-              style={[styles.input, styles.noteInput]}
-              placeholder="Add a note (optional)"
-              placeholderTextColor={colors.muted}
-              value={note}
-              onChangeText={setNote}
-              multiline
-              maxLength={200}
-            />
-            <Text style={styles.pickLabel}>
-              When? <Text style={styles.pickLabelValue}>{selected ? `${selected.label} ${selected.day} ${selected.mon}` : ""}</Text>
-            </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateStrip}>
-              {dateOptions.map((d) => {
-                const active = d.value === date;
-                return (
-                  <Pressable
-                    key={d.value}
-                    testID={`date-${d.value}`}
-                    onPress={() => { setDate(d.value); haptic.light(); }}
-                    style={[styles.dateChip, active && styles.dateChipActive]}
-                  >
-                    <Text style={[styles.dateChipDow, active && styles.dateChipTextActive]}>{d.label}</Text>
-                    <Text style={[styles.dateChipDay, active && styles.dateChipTextActive]}>{d.day}</Text>
-                    <Text style={[styles.dateChipMon, active && styles.dateChipTextActive]}>{d.mon}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <Pressable style={styles.postBtn} onPress={post} disabled={posting} testID="save-event-btn">
-              <Text style={styles.postText}>{posting ? "Adding..." : "Add to calendar"}</Text>
-            </Pressable>
-          </KeyboardAwareScrollView>
-        </View>
-      </Modal>
+        <Pressable style={styles.addBtn} onPress={addTask} testID="todo-add-btn">
+          <Feather name="plus" size={18} color={colors.onBrandPrimary} />
+        </Pressable>
+
+        <Pressable style={styles.clearBtn} onPress={clearWeek} testID="todo-clear-btn">
+          <Text style={styles.clearText}>Clear</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -253,53 +184,67 @@ const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
   header: { paddingHorizontal: spacing.xl, paddingBottom: spacing.md },
   hello: { fontFamily: "Caveat", fontSize: 22, color: c.brandPrimary },
-  title: { fontFamily: "Fraunces", fontSize: 32, fontWeight: "700", color: c.onSurface },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.sm },
-  emptyImg: { width: 160, height: 160, borderRadius: radius.lg, marginBottom: spacing.md },
+  title: { fontFamily: "Fraunces", fontSize: 30, fontWeight: "700", color: c.onSurface },
+  sub: { fontFamily: "Nunito", fontSize: 13, color: c.muted, marginTop: spacing.xs },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: spacing.xl, gap: spacing.sm },
   emptyTitle: { fontFamily: "Fraunces", fontSize: 20, fontWeight: "700", color: c.onSurface },
   emptySub: { fontFamily: "Nunito", fontSize: 14, color: c.muted, textAlign: "center" },
-  dayHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.lg, marginBottom: spacing.sm },
-  dayHeaderText: { fontFamily: "Nunito", fontSize: 13, fontWeight: "700", color: c.onSurfaceTertiary, textTransform: "uppercase", letterSpacing: 0.5 },
-  card: { flexDirection: "row", backgroundColor: c.surfaceSecondary, borderRadius: radius.lg, marginBottom: spacing.md, borderWidth: 1, borderColor: c.border, overflow: "hidden" },
-  accent: { width: 5 },
-  accentMine: { backgroundColor: c.brandPrimary },
-  accentTheirs: { backgroundColor: c.info },
-  cardBody: { flex: 1, padding: spacing.lg, gap: 4 },
-  eventTitle: { fontFamily: "Fraunces", fontSize: 17, fontWeight: "700", color: c.onSurface },
-  eventNote: { fontFamily: "Nunito", fontSize: 14, lineHeight: 20, color: c.onSurfaceSecondary },
-  authorRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.xs },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  dotMine: { backgroundColor: c.brandPrimary },
-  dotTheirs: { backgroundColor: c.info },
-  author: { fontFamily: "Caveat", fontSize: 16, color: c.muted },
-  deleteBtn: { padding: spacing.md, alignItems: "center", justifyContent: "center" },
-  fab: {
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: c.surfaceSecondary,
+    borderRadius: radius.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: c.border,
+    overflow: "hidden",
+  },
+  check: { padding: spacing.md },
+  checkBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkedBox: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
+  cardBody: { flex: 1, paddingVertical: spacing.md, paddingRight: spacing.lg },
+  taskText: { fontFamily: "Fraunces", fontSize: 17, fontWeight: "700", color: c.onSurface },
+  taskCompleted: { textDecorationLine: "line-through", color: c.muted },
+  deleteBtn: { padding: spacing.md },
+  composer: {
     position: "absolute",
-    alignSelf: "center",
+    left: 0,
+    right: 0,
+    bottom: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    backgroundColor: c.brandPrimary,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: c.surface,
   },
-  fabText: { fontFamily: "Nunito", fontSize: 15, fontWeight: "700", color: c.onBrandPrimary },
-  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)" },
-  sheet: { backgroundColor: c.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, paddingHorizontal: spacing.xl, paddingTop: spacing.md, maxHeight: "88%" },
-  grabber: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: c.borderStrong, marginBottom: spacing.lg },
-  sheetTitle: { fontFamily: "Fraunces", fontSize: 20, fontWeight: "700", color: c.onSurface, marginBottom: spacing.lg },
-  input: { backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, fontFamily: "Nunito", fontSize: 16, color: c.onSurface, borderWidth: 1, borderColor: c.border, marginBottom: spacing.md },
-  noteInput: { minHeight: 72, textAlignVertical: "top" },
-  pickLabel: { fontFamily: "Nunito", fontSize: 13, fontWeight: "700", color: c.onSurfaceTertiary, marginBottom: spacing.sm, marginTop: spacing.xs },
-  pickLabelValue: { fontFamily: "Nunito", fontWeight: "700", color: c.brandPrimary },
-  dateStrip: { gap: spacing.sm, paddingBottom: spacing.md, paddingRight: spacing.lg },
-  dateChip: { width: 60, alignItems: "center", paddingVertical: spacing.md, borderRadius: radius.md, backgroundColor: c.surfaceSecondary, borderWidth: 1.5, borderColor: c.border },
-  dateChipActive: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
-  dateChipDow: { fontFamily: "Nunito", fontSize: 12, fontWeight: "600", color: c.muted },
-  dateChipDay: { fontFamily: "Fraunces", fontSize: 20, fontWeight: "700", color: c.onSurface, marginVertical: 2 },
-  dateChipMon: { fontFamily: "Nunito", fontSize: 11, color: c.muted },
-  dateChipTextActive: { color: c.onBrandPrimary },
-  postBtn: { marginTop: spacing.sm, backgroundColor: c.brandPrimary, borderRadius: radius.md, paddingVertical: spacing.lg, alignItems: "center" },
-  postText: { fontFamily: "Nunito", fontSize: 16, fontWeight: "700", color: c.onBrandPrimary },
+  input: {
+    flex: 1,
+    backgroundColor: c.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: c.border,
+    padding: spacing.lg,
+    fontFamily: "Nunito",
+    fontSize: 16,
+    color: c.onSurface,
+  },
+  addBtn: {
+    backgroundColor: c.brandPrimary,
+    borderRadius: radius.md,
+    width: 46,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clearBtn: { paddingHorizontal: spacing.sm, paddingVertical: spacing.md },
+  clearText: { fontFamily: "Nunito", fontSize: 13, fontWeight: "700", color: c.muted },
 }));
