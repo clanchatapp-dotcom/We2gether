@@ -6,7 +6,7 @@
 // non-style color props. Never write color literals in components.
 
 import { useMemo } from "react";
-import { Appearance, StyleSheet, useColorScheme } from "react-native";
+import { Appearance, StyleSheet } from "react-native";
 
 export type ColorScheme = "light" | "dark";
 
@@ -104,7 +104,8 @@ export const radius = {
   pill: 999,
 };
 
-export const defaultScheme = "light" satisfies ColorScheme;
+// The app always uses its dark theme, whatever the phone's setting.
+export const defaultScheme = "dark" satisfies ColorScheme;
 
 export const themes: { light: ThemeColors; dark?: ThemeColors } = { light, dark };
 
@@ -112,12 +113,10 @@ export function setColorScheme(scheme: ColorScheme | null) {
   Appearance.setColorScheme?.(scheme ?? "unspecified");
 }
 
-setColorScheme?.(themes.dark ? null : defaultScheme);
+setColorScheme?.(defaultScheme);
 
 export function useTheme(): { scheme: ColorScheme; colors: ThemeColors } {
-  const system = useColorScheme();
-  const scheme: ColorScheme = system && themes[system] ? system : defaultScheme;
-  return { scheme, colors: themes[scheme] ?? themes.light };
+  return { scheme: defaultScheme, colors: dark };
 }
 
 export function makeStyles<T extends StyleSheet.NamedStyles<T> | StyleSheet.NamedStyles<any>>(

@@ -6,12 +6,11 @@ import { File } from "expo-file-system";
  *
  * GitHub Actions should provide EXPO_PUBLIC_BACKEND_URL as a secret.
  *
- * The fallback is the live 2gether backend so the APK cannot fall back
- * to the old calendar test server.
+ * The fallback is the live Render backend.
  */
 const CONFIGURED_BASE =
   process.env.EXPO_PUBLIC_BACKEND_URL?.trim() ||
-  "https://couples-space-api.emergent.host";
+  "https://we2gether.onrender.com";
 
 const BASE = CONFIGURED_BASE.replace(/\/+$/, "");
 
@@ -139,6 +138,8 @@ export const api = {
     uri: string,
     mediaType: "image" | "video",
     privacy: string,
+    spoiler = false,
+    thumbUri: string | null = null,
   ) {
     const form = new FormData();
 
@@ -148,8 +149,9 @@ export const api = {
 
     if (Platform.OS === "web") {
       const blob = await (await fetch(uri)).blob();
+      const webExt = (blob.type.split("/")[1] || "").replace("quicktime", "mov").replace("jpeg", "jpg");
 
-      form.append("file", blob, name);
+      form.append("file", blob, webExt ? `upload.${webExt}` : name);
     } else {
       /*
        * Expo SDK 57:
@@ -162,8 +164,17 @@ export const api = {
       form.append("file", fileObj, name);
     }
 
+    if (thumbUri) {
+      if (Platform.OS === "web") {
+        form.append("thumbnail", await (await fetch(thumbUri)).blob(), "thumb.jpg");
+      } else {
+        form.append("thumbnail", new File(thumbUri) as any, "thumb.jpg");
+      }
+    }
+
     form.append("media_type", mediaType);
     form.append("privacy", privacy);
+    form.append("spoiler", spoiler ? "true" : "false");
 
     const url = buildUrl("/messages/media");
 
@@ -186,7 +197,7 @@ export function mediaSource(path: string) {
   }
 
   return {
-    uri: `${BASE}/api/files/${path}`,
+    uri: `${BASE}/api/files/${path}?uid=${currentUserId}`,
     headers: currentUserId
       ? {
           "X-User-Id": currentUserId,
@@ -198,11 +209,13 @@ export function mediaSource(path: string) {
 // expo-video needs an explicit source object on native so the authenticated
 // request includes the same user header used by images and API calls. Native
 // video playback cannot rely on the app's fetch wrapper to add this header.
+// The uid query param is also added on native as a fallback for players
+// that drop custom headers on range requests.
 export function mediaVideoUri(path: string) {
-  const uri = `${BASE}/api/files/${path}`;
+  const uri = `${BASE}/api/files/${path}?uid=${currentUserId}`;
 
   if (Platform.OS === "web") {
-    return `${uri}?uid=${currentUserId}`;
+    return uri;
   }
 
   return {

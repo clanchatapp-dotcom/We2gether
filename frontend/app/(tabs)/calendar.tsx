@@ -39,7 +39,7 @@ export default function Calendar() {
     () => format(addDays(parseISO(weekStart), 6), "d MMM"),
     [weekStart],
   );
-  const storageKey = `weekly-todo:${weekStart}`;
+  const storageKey = `weekly-todo_${weekStart}`;
 
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<TodoItem[]>([]);

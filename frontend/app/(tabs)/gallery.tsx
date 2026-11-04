@@ -10,8 +10,10 @@ import { api, mediaSource } from "@/src/api";
 import { usesNativeTabs } from "@/src/navigation";
 import { MediaViewer, ViewerItem } from "@/src/components/MediaViewer";
 import { haptic } from "@/src/haptics";
+import { MediaThumb } from "@/src/components/MediaThumb";
+import { ExpiryBadge } from "@/src/components/ExpiryBadge";
 
-type Media = { id: string; media_path: string; media_type?: string; privacy: string; sender_name?: string; is_mine?: boolean; read_at?: string | null };
+type Media = { id: string; media_path: string; media_type?: string; privacy: string; spoiler?: boolean; expires_at?: string | null; thumb_path?: string | null; sender_name?: string; is_mine?: boolean; read_at?: string | null };
 
 const EMPTY_IMG =
   "https://images.unsplash.com/photo-1632425033037-2f2310d26e93?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwyfHxjb3p5JTIwZW1wdHklMjBnYWxsZXJ5JTIwYWVzdGhldGljJTIwbm90ZWJvb2t8ZW58MHx8fHwxNzg5ODEwMTM3fDA&ixlib=rb-4.1.0&q=85";
@@ -31,7 +33,7 @@ export default function Gallery() {
   const items = q.data || [];
 
   const viewerItems = useMemo(
-    () => items.map((m) => ({ id: m.id, media_path: m.media_path, media_type: m.media_type, privacy: m.privacy })),
+    () => items.map((m) => ({ id: m.id, media_path: m.media_path, media_type: m.media_type, privacy: m.privacy, spoiler: !!m.spoiler })),
     [items],
   );
 
@@ -43,12 +45,17 @@ export default function Gallery() {
       onPress={() => open(index)}
       style={[styles.card, { width: cardW, height: index % 3 === 0 ? cardW * 1.35 : cardW }]}
     >
-      <Image source={mediaSource(item.media_path)} style={styles.img} contentFit="cover" transition={200} />
-      {item.media_type === "video" ? (
+      <MediaThumb mediaPath={item.media_path} thumbPath={item.thumb_path} mediaType={item.media_type} blurred={!!item.spoiler} style={styles.img} testID={`gallery-thumb-${item.id}`} />
+      {item.spoiler ? (
+        <View style={styles.playOverlay} testID={`gallery-spoiler-${item.id}`}><Feather name="eye-off" size={20} color="#FFFFFF" /></View>
+      ) : item.media_type === "video" ? (
         <View style={styles.playOverlay}><Feather name="play" size={22} color="#FFFFFF" /></View>
       ) : null}
       {item.privacy === "no_save" ? (
         <View style={styles.lockBadge}><Feather name="lock" size={11} color="#FFFFFF" /></View>
+      ) : null}
+      {item.privacy === "one_hour" ? (
+        <ExpiryBadge expiresAt={item.expires_at} testID={`gallery-expiry-${item.id}`} />
       ) : null}
       {item.is_mine && item.read_at ? (
         <View style={styles.seenBadge} testID={`gallery-seen-${item.id}`}>

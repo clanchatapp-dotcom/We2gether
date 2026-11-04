@@ -32,7 +32,7 @@ import { haptic } from "@/src/haptics";
 const CAPTURE_KEY = "media-viewer-protected";
 
 function isProtected(item?: ViewerItem | null) {
-  return !!item && (item.privacy === "no_save" || item.privacy === "one_time");
+  return !!item && (item.privacy === "no_save" || item.privacy === "one_time" || item.privacy === "one_hour");
 }
 
 export type ViewerItem = {
@@ -40,6 +40,7 @@ export type ViewerItem = {
   media_path: string;
   media_type?: string;
   privacy?: string;
+  spoiler?: boolean;
 };
 
 const AImage = Animated.createAnimatedComponent(Image);
@@ -163,6 +164,7 @@ export function MediaViewer({
   const [zoomed, setZoomed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
   React.useEffect(() => {
     if (visible) {
@@ -173,8 +175,7 @@ export function MediaViewer({
 
   const current = items[index];
   const protectedItem = isProtected(current);
-  const canSave =
-    current && current.privacy !== "no_save" && current.privacy !== "one_time" && Platform.OS !== "web";
+  const canSave = !!current && !protectedItem;
 
   // Block OS-level screenshots/recordings (fully effective on Android via
   // FLAG_SECURE; iOS has no way to block the shutter, so we detect it below
@@ -228,6 +229,27 @@ export function MediaViewer({
   const onSave = useCallback(async () => {
     if (!current || saving) return;
     setSaving(true);
+    if (Platform.OS === "web") {
+      try {
+        const src = mediaSource(current.media_path) as any;
+        const blob = await (await fetch(src.uri)).blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `we2gether-${current.id}.${current.media_path.split(".").pop() || (current.media_type === "video" ? "mp4" : "jpg")}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        setToast("Saved to your device");
+      } catch {
+        setToast("Could not save");
+      } finally {
+        setSaving(false);
+        setTimeout(() => setToast(null), 1800);
+      }
+      return;
+    }
     try {
       const MediaLibrary = require("expo-media-library");
       const FileSystem = require("expo-file-system/legacy");
@@ -237,7 +259,7 @@ export function MediaViewer({
         setSaving(false);
         return;
       }
-      const target = `${FileSystem.cacheDirectory}${current.id}.${current.media_type === "video" ? "mp4" : "jpg"}`;
+      const target = `${FileSystem.cacheDirectory}${current.id}.${current.media_path.split(".").pop() || (current.media_type === "video" ? "mp4" : "jpg")}`;
       const src = mediaSource(current.media_path) as any;
       const dl = await FileSystem.downloadAsync(src.uri, target, {
         headers: src.headers || {},
@@ -271,7 +293,29 @@ export function MediaViewer({
             setZoomed(false);
           }}
           renderItem={({ item, index: i }) =>
-            item.media_type === "video" ? (
+            item.spoiler && !revealed.has(item.id) ? (
+              <Pressable
+                testID={`viewer-spoiler-${item.id}`}
+                style={{ width, height, alignItems: "center", justifyContent: "center" }}
+                onPress={() => {
+                  haptic.light();
+                  setRevealed((r) => new Set(r).add(item.id));
+                }}
+              >
+                {item.media_type === "video" ? null : (
+                  <Image
+                    source={mediaSource(item.media_path)}
+                    style={{ position: "absolute", width, height }}
+                    contentFit="cover"
+                    blurRadius={80}
+                  />
+                )}
+                <View style={styles.spoilerPill}>
+                  <Feather name="eye-off" size={18} color="#FFFFFF" />
+                  <Text style={styles.badgeText}>Spoiler · tap to reveal</Text>
+                </View>
+              </Pressable>
+            ) : item.media_type === "video" ? (
               <VideoPage item={item} width={width} height={height} active={i === index} />
             ) : (
               <ZoomableImage item={item} width={width} height={height} onZoomChange={setZoomed} />
@@ -281,19 +325,19 @@ export function MediaViewer({
 
         <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
           <Pressable style={styles.iconBtn} onPress={onClose} testID="viewer-close">
-            <Feather name="x" size={24} color={colors.onSurfaceInverse} />
+            <Feather name="x" size={24} color="#FFFFFF" />
           </Pressable>
           <Text style={styles.counter}>
             {items.length > 1 ? `${index + 1} / ${items.length}` : ""}
           </Text>
           {canSave ? (
             <Pressable style={styles.iconBtn} onPress={onSave} testID="viewer-save">
-              <Feather name={saving ? "loader" : "download"} size={22} color={colors.onSurfaceInverse} />
+              <Feather name={saving ? "loader" : "download"} size={22} color="#FFFFFF" />
             </Pressable>
           ) : (
-            <View style={styles.iconBtn}>
-              {current?.privacy === "no_save" ? (
-                <Feather name="lock" size={20} color={colors.onSurfaceInverse} />
+            <View style={styles.iconBtn} testID="viewer-save-locked">
+              {protectedItem ? (
+                <Feather name="lock" size={20} color="#FFFFFF" />
               ) : null}
             </View>
           )}
@@ -301,8 +345,13 @@ export function MediaViewer({
 
         {current?.privacy === "no_save" ? (
           <View style={[styles.badge, { bottom: insets.bottom + spacing.xl }]}>
-            <Feather name="lock" size={13} color={colors.onSurfaceInverse} />
+            <Feather name="lock" size={13} color="#FFFFFF" />
             <Text style={styles.badgeText}>Saving disabled by sender</Text>
+          </View>
+        ) : current?.privacy === "one_hour" ? (
+          <View style={[styles.badge, { bottom: insets.bottom + spacing.xl }]} testID="viewer-expiry-badge">
+            <Feather name="clock" size={13} color="#FFFFFF" />
+            <Text style={styles.badgeText}>Disappears an hour after sending</Text>
           </View>
         ) : null}
 
@@ -347,6 +396,15 @@ const useStyles = makeStyles((c) => ({
     backgroundColor: "rgba(0,0,0,0.55)",
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    borderRadius: 999,
+  },
+  spoilerPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderRadius: 999,
   },
   badgeText: { color: "#FFFFFF", fontFamily: "Nunito", fontSize: 13 },
