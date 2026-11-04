@@ -1,250 +1,183 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  FlatList,
-  TextInput,
-  ActivityIndicator,
-} from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState, FlatList, Image, Pressable, Text, TextInput, View, ActivityIndicator } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@react-native-vector-icons/feather";
-import { format, startOfWeek, addDays, parseISO } from "date-fns";
-import * as SecureStore from "expo-secure-store";
 
-import { makeStyles, spacing, radius, useTheme } from "@/src/theme";
-import { ukTodayISO } from "@/src/ukTime";
+import { api, mediaSource } from "@/src/api";
+import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { usesNativeTabs } from "@/src/navigation";
+import { formatUkTime } from "@/src/ukTime";
+import { haptic } from "@/src/haptics";
+import { useToast } from "@/src/components/Toast";
 
-type TodoItem = {
+type Message = {
   id: string;
-  text: string;
-  completed: boolean;
-  created_at: string;
+  type: string;
+  text?: string;
+  is_mine: boolean;
+  sender_name?: string;
+  media_path?: string;
+  media_type?: string;
+  read_at?: string | null;
 };
 
-function weekStartISO(todayISO: string) {
-  const d = parseISO(todayISO);
-  const s = startOfWeek(d, { weekStartsOn: 1 });
-  return format(s, "yyyy-MM-dd");
-}
-
-export default function Calendar() {
+export default function Chat() {
   const styles = useStyles();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-
-  const todayISO = ukTodayISO();
-  const weekStart = useMemo(() => weekStartISO(todayISO), [todayISO]);
-  const weekEnd = useMemo(
-    () => format(addDays(parseISO(weekStart), 6), "d MMM"),
-    [weekStart],
-  );
-  const storageKey = `weekly-todo_${weekStart}`;
-
-  const [loading, setLoading] = useState(true);
-  const [tasks, setTasks] = useState<TodoItem[]>([]);
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const listRef = useRef<FlatList<Message>>(null);
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [appActive, setAppActive] = useState(AppState.currentState === "active");
+
+  const partnerQuery = useQuery({ queryKey: ["me"], queryFn: () => api.get("/couples/me") });
+  const messagesQuery = useQuery<Message[]>({
+    queryKey: ["messages"],
+    queryFn: () => api.get("/messages"),
+    refetchInterval: 4000,
+  });
+  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const lastReadId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].is_mine && messages[i].read_at) return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
+  useFocusEffect(useCallback(() => {
+    setFocused(true);
+    return () => setFocused(false);
+  }, []));
 
   useEffect(() => {
-    let mounted = true;
+    const subscription = AppState.addEventListener("change", state => setAppActive(state === "active"));
+    return () => subscription.remove();
+  }, []);
 
-    (async () => {
-      try {
-        const saved = await SecureStore.getItemAsync(storageKey);
-        if (mounted) {
-          setTasks(saved ? JSON.parse(saved) : []);
-        }
-      } catch (error) {
-        console.warn("Could not load weekly to-do list", error);
-        if (mounted) setTasks([]);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
+  useEffect(() => {
+    if (!focused || !appActive || !messages.some(message => !message.is_mine && !message.read_at)) return;
+    const last = messages[messages.length - 1];
+    if (!last) return;
+    api.post("/messages/read", { through_id: last.id })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["messages"] }))
+      .catch(() => {});
+  }, [focused, appActive, messages, queryClient]);
 
-    return () => {
-      mounted = false;
-    };
-  }, [storageKey]);
-
-  const saveTasks = async (next: TodoItem[]) => {
-    setTasks(next);
+  const send = async () => {
+    const value = text.trim();
+    if (!value || sending) return;
+    setText("");
+    setSending(true);
+    haptic.light();
     try {
-      await SecureStore.setItemAsync(storageKey, JSON.stringify(next));
-    } catch (error) {
-      console.warn("Could not save weekly to-do list", error);
+      await api.post("/messages/text", { text: value });
+      await queryClient.invalidateQueries({ queryKey: ["messages"] });
+    } catch {
+      setText(value);
+      toast.show("Message failed to send");
+    } finally {
+      setSending(false);
     }
   };
 
-  const addTask = async () => {
-    const value = text.trim();
-    if (!value) return;
-
-    const item: TodoItem = {
-      id: `${Date.now()}`,
-      text: value,
-      completed: false,
-      created_at: new Date().toISOString(),
-    };
-
-    setText("");
-    await saveTasks([item, ...tasks]);
-  };
-
-  const toggleTask = async (id: string) => {
-    const next = tasks.map((task) =>
-      task.id === id ? { ...task, completed: !task.completed } : task,
-    );
-    await saveTasks(next);
-  };
-
-  const removeTask = async (id: string) => {
-    const next = tasks.filter((task) => task.id !== id);
-    await saveTasks(next);
-  };
-
-  const clearWeek = async () => {
-    await saveTasks([]);
-  };
-
-  const renderItem = ({ item }: { item: TodoItem }) => (
-    <View style={styles.card} testID={`todo-${item.id}`}>
-      <Pressable onPress={() => toggleTask(item.id)} style={styles.check} testID={`todo-toggle-${item.id}`}>
-        <View style={[styles.checkBox, item.completed && styles.checkedBox]}>
-          {item.completed ? <Feather name="check" size={14} color={colors.onBrandPrimary} /> : null}
-        </View>
-      </Pressable>
-
-      <View style={styles.cardBody}>
-        <Text style={[styles.taskText, item.completed && styles.taskCompleted]}>{item.text}</Text>
+  const partnerName = partnerQuery.data?.partner?.name || "Your partner";
+  const renderMessage = ({ item }: { item: Message }) => {
+    const mine = item.is_mine;
+    return (
+      <View style={[styles.messageRow, mine ? styles.mineRow : styles.partnerRow]}>
+        {item.type === "text" ? (
+          <View style={[styles.bubble, mine ? styles.mineBubble : styles.partnerBubble]}>
+            <Text style={[styles.messageText, mine ? styles.mineText : styles.partnerText]}>{item.text}</Text>
+          </View>
+        ) : item.media_path ? (
+          <Image source={mediaSource(item.media_path)} style={styles.media} resizeMode="cover" />
+        ) : null}
+        {mine && item.id === lastReadId && item.read_at ? (
+          <Text style={styles.readReceipt}>Read {formatUkTime(item.read_at)}</Text>
+        ) : null}
       </View>
-
-      <Pressable onPress={() => removeTask(item.id)} style={styles.deleteBtn} testID={`todo-delete-${item.id}`}>
-        <Feather name="trash-2" size={18} color={colors.muted} />
-      </Pressable>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
-        <Text style={styles.hello}>weekly</Text>
-        <Text style={styles.title}>To do</Text>
-        <Text style={styles.sub}>
-          Week of {weekStart} to {weekEnd}
-        </Text>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+        <View style={styles.avatar}><Text style={styles.avatarText}>{partnerName.charAt(0).toUpperCase()}</Text></View>
+        <View>
+          <Text style={styles.partnerName}>{partnerName}</Text>
+          <Text style={styles.headerSub}>{partnerQuery.data?.partner ? "just the two of you" : "waiting to connect"}</Text>
+        </View>
       </View>
-
-      {loading ? (
+      {messagesQuery.isLoading ? (
+        <View style={styles.center}><ActivityIndicator color={colors.brandPrimary} /></View>
+      ) : messages.length === 0 ? (
         <View style={styles.center}>
-          <ActivityIndicator color={colors.brandPrimary} />
+          <Feather name="message-circle" size={40} color={colors.brandSecondary} />
+          <Text style={styles.emptyTitle}>Say hello 👋</Text>
+          <Text style={styles.emptySub}>Your private conversation starts here.</Text>
         </View>
       ) : (
         <FlatList
-          data={tasks}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 120 }}
+          ref={listRef}
+          style={styles.flex}
+          data={messages}
+          keyExtractor={message => message.id}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.messageList}
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={() => (
-            <View style={styles.emptyWrap}>
-              <Feather name="clipboard" size={54} color={colors.muted} />
-              <Text style={styles.emptyTitle}>Nothing planned this week</Text>
-              <Text style={styles.emptySub}>Add a task. It will reset automatically when the week changes.</Text>
-            </View>
-          )}
         />
       )}
-
-      <View style={[styles.composer, { paddingBottom: insets.bottom + spacing.lg }]}>
+      <View style={[styles.composer, { paddingBottom: usesNativeTabs ? insets.bottom : spacing.sm }]}>
         <TextInput
-          testID="todo-input"
+          testID="chat-input"
           style={styles.input}
-          placeholder="Add a task"
+          placeholder="Write something sweet..."
           placeholderTextColor={colors.muted}
           value={text}
           onChangeText={setText}
-          onSubmitEditing={addTask}
-          returnKeyType="done"
+          onSubmitEditing={send}
+          returnKeyType="send"
+          multiline
         />
-
-        <Pressable style={styles.addBtn} onPress={addTask} testID="todo-add-btn">
-          <Feather name="plus" size={18} color={colors.onBrandPrimary} />
-        </Pressable>
-
-        <Pressable style={styles.clearBtn} onPress={clearWeek} testID="todo-clear-btn">
-          <Text style={styles.clearText}>Clear</Text>
+        <Pressable style={[styles.sendButton, (!text.trim() || sending) && styles.sendDisabled]} onPress={send} disabled={!text.trim() || sending} testID="send-btn">
+          <Feather name="send" size={18} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
     </View>
   );
 }
 
-const useStyles = makeStyles((c) => ({
+const useStyles = makeStyles(c => ({
   root: { flex: 1, backgroundColor: c.surface },
-  header: { paddingHorizontal: spacing.xl, paddingBottom: spacing.md },
-  hello: { fontFamily: "Caveat", fontSize: 22, color: c.brandPrimary },
-  title: { fontFamily: "Fraunces", fontSize: 30, fontWeight: "700", color: c.onSurface },
-  sub: { fontFamily: "Nunito", fontSize: 13, color: c.muted, marginTop: spacing.xs },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
-  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: spacing.xl, gap: spacing.sm },
-  emptyTitle: { fontFamily: "Fraunces", fontSize: 20, fontWeight: "700", color: c.onSurface },
-  emptySub: { fontFamily: "Nunito", fontSize: 14, color: c.muted, textAlign: "center" },
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: c.surfaceSecondary,
-    borderRadius: radius.lg,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    overflow: "hidden",
-  },
-  check: { padding: spacing.md },
-  checkBox: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: c.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkedBox: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
-  cardBody: { flex: 1, paddingVertical: spacing.md, paddingRight: spacing.lg },
-  taskText: { fontFamily: "Fraunces", fontSize: 17, fontWeight: "700", color: c.onSurface },
-  taskCompleted: { textDecorationLine: "line-through", color: c.muted },
-  deleteBtn: { padding: spacing.md },
-  composer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: c.surface,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: c.surfaceSecondary,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: spacing.lg,
-    fontFamily: "Nunito",
-    fontSize: 16,
-    color: c.onSurface,
-  },
-  addBtn: {
-    backgroundColor: c.brandPrimary,
-    borderRadius: radius.md,
-    width: 46,
-    height: 46,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  clearBtn: { paddingHorizontal: spacing.sm, paddingVertical: spacing.md },
-  clearText: { fontFamily: "Nunito", fontSize: 13, fontWeight: "700", color: c.muted },
+  flex: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: c.divider },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.brandPrimary, alignItems: "center", justifyContent: "center" },
+  avatarText: { fontFamily: "Fraunces", fontSize: 18, fontWeight: "700", color: c.onBrandPrimary },
+  partnerName: { fontFamily: "Fraunces", fontSize: 17, fontWeight: "700", color: c.onSurface },
+  headerSub: { fontFamily: "Nunito", fontSize: 12, color: c.muted },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm },
+  emptyTitle: { fontFamily: "Fraunces", fontSize: 22, fontWeight: "700", color: c.onSurface, marginTop: spacing.md },
+  emptySub: { fontFamily: "Nunito", fontSize: 14, color: c.muted },
+  messageList: { padding: spacing.lg, paddingBottom: spacing.md },
+  messageRow: { maxWidth: "82%", marginBottom: spacing.md },
+  mineRow: { alignSelf: "flex-end", alignItems: "flex-end" },
+  partnerRow: { alignSelf: "flex-start", alignItems: "flex-start" },
+  bubble: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.lg },
+  mineBubble: { backgroundColor: c.brandPrimary, borderBottomRightRadius: spacing.xs },
+  partnerBubble: { backgroundColor: c.surfaceSecondary, borderBottomLeftRadius: spacing.xs },
+  messageText: { fontFamily: "Nunito", fontSize: 15, lineHeight: 21 },
+  mineText: { color: c.onBrandPrimary },
+  partnerText: { color: c.onSurfaceSecondary },
+  media: { width: 200, height: 240, borderRadius: radius.md, backgroundColor: c.surfaceSecondary },
+  readReceipt: { fontFamily: "Nunito", fontSize: 11, color: c.muted, marginTop: 3 },
+  composer: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.sm, backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.divider },
+  input: { flex: 1, backgroundColor: c.surfaceSecondary, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md, fontFamily: "Nunito", fontSize: 15, color: c.onSurface, maxHeight: 120, minHeight: 44 },
+  sendButton: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: c.brandPrimary },
+  sendDisabled: { opacity: 0.55 },
 }));
