@@ -195,12 +195,24 @@ export function mediaSource(path: string) {
   };
 }
 
+// expo-video needs an explicit source object on native so the authenticated
+// request includes the same user header used by images and API calls. Native
+// video playback cannot rely on the app's fetch wrapper to add this header.
 export function mediaVideoUri(path: string) {
+  const uri = `${BASE}/api/files/${path}`;
+
   if (Platform.OS === "web") {
-    return `${BASE}/api/files/${path}?uid=${currentUserId}`;
+    return `${uri}?uid=${currentUserId}`;
   }
 
-  return `${BASE}/api/files/${path}`;
+  return {
+    uri,
+    headers: currentUserId
+      ? {
+          "X-User-Id": currentUserId,
+        }
+      : undefined,
+  };
 }
 
 /*
