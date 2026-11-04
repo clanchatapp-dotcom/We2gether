@@ -97,6 +97,28 @@ async function request(
   }
 }
 
+function uploadFileName(
+  uri: string,
+  mediaType: "image" | "video",
+  fileName?: string | null,
+  mimeType?: string | null,
+  blobType?: string,
+) {
+  const allowedExtensions = new Set(["jpg", "jpeg", "png", "gif", "webp", "heic", "mp4", "m4v", "mov"]);
+  const normalizeExtension = (value?: string | null) => {
+    const ext = value?.toLowerCase().replace(/^\./, "").replace("quicktime", "mov");
+    return ext === "jpeg" ? "jpg" : ext;
+  };
+  const name = fileName?.split(/[\\/]/).pop() || "";
+  const namedExtension = normalizeExtension(name.match(/\.([^.]+)$/)?.[1]);
+  const uriPath = decodeURIComponent(uri.split(/[?#]/)[0]);
+  const uriName = uriPath.split(/[\\/]/).pop() || "";
+  const uriExtension = normalizeExtension(uriName.match(/\.([^.]+)$/)?.[1]);
+  const mimeExtension = normalizeExtension((mimeType || blobType)?.split("/")[1]);
+  const extension = [namedExtension, mimeExtension, uriExtension].find(ext => ext && allowedExtensions.has(ext));
+  return `upload.${extension || (mediaType === "video" ? "mp4" : "jpg")}`;
+}
+
 export const api = {
   async get(path: string) {
     const url = buildUrl(path);
@@ -140,27 +162,20 @@ export const api = {
     privacy: string,
     spoiler = false,
     thumbUri: string | null = null,
+    fileName?: string | null,
+    mimeType?: string | null,
   ) {
     const form = new FormData();
-
-    const name =
-      uri.split("/").pop() ||
-      (mediaType === "image" ? "photo.jpg" : "video.mp4");
+    const name = uploadFileName(uri, mediaType, fileName, mimeType);
 
     if (Platform.OS === "web") {
       const blob = await (await fetch(uri)).blob();
-      const webExt = (blob.type.split("/")[1] || "").replace("quicktime", "mov").replace("jpeg", "jpg");
-
-      form.append("file", blob, webExt ? `upload.${webExt}` : name);
+      const finalName = uploadFileName(uri, mediaType, fileName, mimeType, blob.type);
+      form.append("file", blob, finalName);
     } else {
-      /*
-       * Expo SDK 57:
-       *
-       * expo-file-system's File implements the Blob interface,
-       * which is required for FormData uploads.
-       */
+      // Keep the selected asset's real extension (not the cache URI's opaque
+      // name) so the server stores and serves videos with the right media type.
       const fileObj = new File(uri);
-
       form.append("file", fileObj, name);
     }
 
@@ -168,7 +183,8 @@ export const api = {
       if (Platform.OS === "web") {
         form.append("thumbnail", await (await fetch(thumbUri)).blob(), "thumb.jpg");
       } else {
-        form.append("thumbnail", new File(thumbUri) as any, "thumb.jpg");
+        const thumbnail = new File(thumbUri);
+        form.append("thumbnail", thumbnail, "thumb.jpg");
       }
     }
 
