@@ -136,43 +136,54 @@ export const api = {
     fileName?: string | null,
     mimeType?: string | null,
   ) {
-    const form = new FormData();
     const name = uploadFileName(uri, mediaType, fileName, mimeType);
-
-    if (Platform.OS === "web") {
-      const blob = await (await fetch(uri)).blob();
-      const finalName = uploadFileName(uri, mediaType, fileName, mimeType || blob.type);
-      form.append("file", blob, finalName);
-    } else {
-      form.append("file", {
-        uri,
-        name,
-        type: mimeType || (mediaType === "video" ? "video/mp4" : "image/jpeg"),
-      } as any);
-    }
-
-    if (thumbUri) {
-      if (Platform.OS === "web") {
-        form.append("thumbnail", await (await fetch(thumbUri)).blob(), "thumb.jpg");
-      } else {
-        form.append("thumbnail", {
-          uri: thumbUri,
-          name: "thumb.jpg",
-          type: "image/jpeg",
-        } as any);
-      }
-    }
-
-    form.append("media_type", mediaType);
-    form.append("privacy", privacy);
-    form.append("spoiler", spoiler ? "true" : "false");
-
     const url = buildUrl("/messages/media");
-    const res = await request(url, {
-      method: "POST",
-      headers: headers(),
-      body: form,
-    });
+
+    // Builds the multipart body. On phones a file part is normally the
+    // classic {uri, name, type} object. Some fetch implementations reject
+    // that ("Unsupported FormDataPart implementation"), so there is a second
+    // mode that uses expo-file-system's File object instead.
+    const buildForm = async (useFileClass: boolean) => {
+      const form = new FormData();
+
+      if (Platform.OS === "web") {
+        const blob = await (await fetch(uri)).blob();
+        const finalName = uploadFileName(uri, mediaType, fileName, mimeType || blob.type);
+        form.append("file", blob, finalName);
+        if (thumbUri) {
+          form.append("thumbnail", await (await fetch(thumbUri)).blob(), "thumb.jpg");
+        }
+      } else {
+        const part = (partUri: string, partName: string, partType: string): any => {
+          if (useFileClass) {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const FS = require("expo-file-system");
+            return new FS.File(partUri);
+          }
+          return { uri: partUri, name: partName, type: partType };
+        };
+        form.append(
+          "file",
+          part(uri, name, mimeType || (mediaType === "video" ? "video/mp4" : "image/jpeg")),
+        );
+        if (thumbUri) form.append("thumbnail", part(thumbUri, "thumb.jpg", "image/jpeg"));
+      }
+
+      form.append("media_type", mediaType);
+      form.append("privacy", privacy);
+      form.append("spoiler", spoiler ? "true" : "false");
+      return form;
+    };
+
+    let res: Response;
+    try {
+      res = await request(url, { method: "POST", headers: headers(), body: await buildForm(false) });
+    } catch (error: any) {
+      if (Platform.OS === "web" || !String(error?.message || "").includes("FormDataPart")) {
+        throw error;
+      }
+      res = await request(url, { method: "POST", headers: headers(), body: await buildForm(true) });
+    }
 
     return handle(res);
   },
