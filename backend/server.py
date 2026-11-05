@@ -402,11 +402,9 @@ def put_object(
 
         resp = requests.put(url, headers=headers, data=data, timeout=120)
 
-        # If service role key is invalid or service unavailable, bubble up
-        if resp.status_code in (401, 403, 503):
-            raise Exception(f"Supabase storage error: {resp.status_code} {resp.text}")
-
-        resp.raise_for_status()
+        # Surface Supabase's real reason (too big, no bucket, bad key...)
+        if resp.status_code >= 400:
+            raise Exception(f"Supabase storage error: {resp.status_code} {resp.text[:300]}")
 
         # Supabase returns JSON metadata on success; keep it for parity.
         try:
@@ -1350,8 +1348,8 @@ async def send_media(
         raise HTTPException(
             status_code=502,
             detail=(
-                "Could not upload media "
-                "right now. Please try again."
+                "Could not upload media: "
+                f"{str(e)[:300]}"
             ),
         )
 
