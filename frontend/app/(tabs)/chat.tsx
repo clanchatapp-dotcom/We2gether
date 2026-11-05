@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   FlatList,
   Linking,
@@ -19,13 +18,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Feather from "@react-native-vector-icons/feather";
 
-import { api, mediaSource } from "@/src/api";
+import { api } from "@/src/api";
 import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
 import { usesNativeTabs } from "@/src/navigation";
 import { formatUkTime } from "@/src/ukTime";
 import { haptic } from "@/src/haptics";
 import { useToast } from "@/src/components/Toast";
 import { MediaViewer, ViewerItem } from "@/src/components/MediaViewer";
+import { MediaThumb } from "@/src/components/MediaThumb";
 
 type Message = {
   id: string;
@@ -36,9 +36,11 @@ type Message = {
   privacy: string;
   media_path?: string;
   media_type?: string;
+  thumb_path?: string | null;
   one_time: boolean;
   consumed: boolean;
   can_open: boolean;
+  spoiler?: boolean;
   read_at?: string | null;
   gif_url?: string;
   gif_title?: string;
@@ -71,6 +73,7 @@ export default function Chat() {
   const [sending, setSending] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [privacy, setPrivacy] = useState("none");
+  const [spoiler, setSpoiler] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
   const [gifQuery, setGifQuery] = useState("");
   const [gifResults, setGifResults] = useState<GifResult[]>([]);
@@ -143,12 +146,7 @@ export default function Chat() {
     }
     setSending(true);
     try {
-      await api.post("/messages/gif", {
-        gif_id: gif.id,
-        gif_url: gifUrl,
-        preview_url: previewUrl,
-        title: gif.title || "",
-      });
+      await api.post("/messages/gif", { gif_id: gif.id, gif_url: gifUrl, preview_url: previewUrl, title: gif.title || "" });
       setGifOpen(false);
       setGifQuery("");
       await queryClient.invalidateQueries({ queryKey: ["messages"] });
@@ -167,9 +165,7 @@ export default function Chat() {
     }
     setGifLoading(true);
     try {
-      const endpoint = query.trim()
-        ? "https://api.giphy.com/v1/gifs/search"
-        : "https://api.giphy.com/v1/gifs/trending";
+      const endpoint = query.trim() ? "https://api.giphy.com/v1/gifs/search" : "https://api.giphy.com/v1/gifs/trending";
       const params = new URLSearchParams({ api_key: giphyKey, limit: "24", rating: "g", bundle: "messaging_non_clips" });
       if (query.trim()) params.set("q", query.trim().slice(0, 50));
       const response = await fetch(`${endpoint}?${params.toString()}`);
@@ -194,31 +190,35 @@ export default function Chat() {
 
   const pickAndSend = async (mediaType: "image" | "video", useCamera = false) => {
     setAttachOpen(false);
-    const permission = useCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      if (!permission.canAskAgain) {
-        toast.show(`Enable ${useCamera ? "camera" : "photo"} access in Settings`);
-        Linking.openSettings();
-      } else {
-        toast.show(`${useCamera ? "Camera" : "Photo library"} access is needed to share`);
-      }
-      return;
-    }
-    const options: ImagePicker.ImagePickerOptions = {
-      mediaTypes: mediaType === "image" ? ["images"] : ["videos"],
-      quality: 0.8,
-      videoMaxDuration: 60,
-    };
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync(options)
-      : await ImagePicker.launchImageLibraryAsync(options);
-    if (result.canceled || !result.assets?.length) return;
-    setSending(true);
     try {
-      await api.uploadMedia(result.assets[0].uri, mediaType, privacy);
+      const permission = useCamera
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        if (!permission.canAskAgain) {
+          toast.show(`Enable ${useCamera ? "camera" : "photo"} access in Settings`);
+          Linking.openSettings();
+        } else {
+          toast.show(`${useCamera ? "Camera" : "Photo library"} access is needed to share`);
+        }
+        return;
+      }
+      const options: ImagePicker.ImagePickerOptions = {
+        mediaTypes: mediaType === "image" ? ["images"] : ["videos"],
+        ...(mediaType === "image" ? { quality: 0.8 } : {}),
+        videoMaxDuration: 60,
+      };
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      setSending(true);
+      // Pass the selected asset's metadata so the uploader can preserve its
+      // actual file extension and MIME type, especially for camera videos.
+      await api.uploadMedia(asset.uri, mediaType, privacy, spoiler, null, asset.fileName, asset.mimeType);
       setPrivacy("none");
+      setSpoiler(false);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["messages"] }),
         queryClient.invalidateQueries({ queryKey: ["gallery"] }),
@@ -242,7 +242,7 @@ export default function Chat() {
       try {
         await api.post(`/messages/${message.id}/open`, {});
         setViewer({
-          items: [{ id: message.id, media_path: message.media_path, media_type: message.media_type, privacy: "one_time" }],
+          items: [{ id: message.id, media_path: message.media_path, media_type: message.media_type, privacy: "one_time", spoiler: !!message.spoiler }],
           index: 0,
         });
       } catch {
@@ -256,6 +256,7 @@ export default function Chat() {
       media_path: item.media_path!,
       media_type: item.media_type,
       privacy: item.privacy,
+      spoiler: !!item.spoiler,
     }));
     const index = items.findIndex(item => item.id === message.id);
     setViewer({ items, index: Math.max(0, index) });
@@ -279,8 +280,21 @@ export default function Chat() {
           </View>
         ) : item.media_path ? (
           <Pressable onPress={() => void openMedia(item)} testID={`media-${item.id}`}>
-            <Image source={mediaSource(item.media_path)} style={styles.media} contentFit="cover" />
-            {item.media_type === "video" ? <View style={styles.playOverlay}><Feather name="play" size={26} color="#FFFFFF" /></View> : null}
+            <MediaThumb
+              mediaPath={item.media_path}
+              thumbPath={item.thumb_path}
+              mediaType={item.media_type}
+              blurred={!!item.spoiler}
+              style={styles.media}
+            />
+            {item.spoiler ? (
+              <View style={styles.spoilerCover} pointerEvents="none">
+                <Feather name="eye-off" size={18} color="#FFFFFF" />
+                <Text style={styles.spoilerCoverText}>Spoiler · tap to reveal</Text>
+              </View>
+            ) : item.media_type === "video" ? (
+              <View style={styles.playOverlay}><Feather name="play" size={26} color="#FFFFFF" /></View>
+            ) : null}
             {item.one_time ? (
               <View style={styles.mediaLabel}>
                 <Feather name={item.consumed ? "eye-off" : "eye"} size={14} color="#FFFFFF" />
@@ -335,18 +349,8 @@ export default function Chat() {
               <Pressable onPress={() => setGifOpen(false)} hitSlop={8}><Feather name="x" size={20} color={colors.onSurfaceSecondary} /></Pressable>
             </View>
             <View style={styles.gifSearchRow}>
-              <TextInput
-                value={gifQuery}
-                onChangeText={setGifQuery}
-                onSubmitEditing={() => void loadGifs(gifQuery)}
-                placeholder="Search GIFs..."
-                placeholderTextColor={colors.muted}
-                style={styles.gifSearchInput}
-                returnKeyType="search"
-              />
-              <Pressable style={styles.gifSearchButton} onPress={() => void loadGifs(gifQuery)} disabled={gifLoading}>
-                <Feather name="search" size={17} color={colors.onBrandPrimary} />
-              </Pressable>
+              <TextInput value={gifQuery} onChangeText={setGifQuery} onSubmitEditing={() => void loadGifs(gifQuery)} placeholder="Search GIFs..." placeholderTextColor={colors.muted} style={styles.gifSearchInput} returnKeyType="search" />
+              <Pressable style={styles.gifSearchButton} onPress={() => void loadGifs(gifQuery)} disabled={gifLoading}><Feather name="search" size={17} color={colors.onBrandPrimary} /></Pressable>
             </View>
             {gifLoading ? (
               <View style={styles.gifLoading}><ActivityIndicator color={colors.brandPrimary} /></View>
@@ -373,17 +377,7 @@ export default function Chat() {
           <Pressable style={styles.attachButton} onPress={() => { haptic.light(); setAttachOpen(true); }} testID="attach-btn" accessibilityLabel="Send a photo or video">
             <Feather name="plus" size={22} color={colors.brandPrimary} />
           </Pressable>
-          <TextInput
-            testID="chat-input"
-            style={styles.input}
-            placeholder="Write something sweet..."
-            placeholderTextColor={colors.muted}
-            value={text}
-            onChangeText={setText}
-            onSubmitEditing={send}
-            returnKeyType="send"
-            multiline
-          />
+          <TextInput testID="chat-input" style={styles.input} placeholder="Write something sweet..." placeholderTextColor={colors.muted} value={text} onChangeText={setText} onSubmitEditing={send} returnKeyType="send" multiline />
           <Pressable style={[styles.gifButton, gifOpen && styles.gifButtonActive]} onPress={openGifs} disabled={sending} testID="gif-btn" accessibilityLabel="Choose a GIF">
             <Text style={[styles.gifButtonText, gifOpen && styles.gifButtonTextActive]}>GIF</Text>
           </Pressable>
@@ -406,6 +400,13 @@ export default function Chat() {
               </Pressable>
             ))}
           </View>
+          <Pressable style={styles.spoilerToggle} onPress={() => setSpoiler(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: spoiler }} testID="media-spoiler-toggle">
+            <Feather name={spoiler ? "check-square" : "square"} size={20} color={spoiler ? colors.brandPrimary : colors.muted} />
+            <View style={styles.spoilerCopy}>
+              <Text style={styles.spoilerTitle}>Cover as a spoiler</Text>
+              <Text style={styles.spoilerHint}>Blur the preview until it is opened.</Text>
+            </View>
+          </Pressable>
           <Text style={styles.sheetLabel}>Take now</Text>
           <View style={styles.pickRow}>
             <Pressable style={styles.snapButton} onPress={() => void pickAndSend("image", true)} testID="capture-photo"><Feather name="camera" size={21} color={colors.onBrandPrimary} /><Text style={styles.snapText}>Photo</Text></Pressable>
@@ -448,6 +449,8 @@ const useStyles = makeStyles(c => ({
   partnerText: { color: c.onSurfaceSecondary },
   media: { width: 220, height: 260, borderRadius: radius.md, backgroundColor: c.surfaceSecondary },
   playOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.2)" },
+  spoilerCover: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: spacing.sm, backgroundColor: "rgba(0,0,0,0.28)" },
+  spoilerCoverText: { color: "#FFFFFF", fontFamily: "Nunito", fontSize: 13, fontWeight: "700" },
   mediaLabel: { position: "absolute", bottom: spacing.sm, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: spacing.xs, backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   mediaLabelText: { color: "#FFFFFF", fontFamily: "Nunito", fontSize: 12, fontWeight: "700" },
   readReceipt: { fontFamily: "Nunito", fontSize: 11, color: c.muted, marginTop: 3 },
@@ -487,6 +490,10 @@ const useStyles = makeStyles(c => ({
   privacyChipActive: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
   privacyText: { fontFamily: "Nunito", fontSize: 12, fontWeight: "600", color: c.onSurfaceTertiary },
   privacyTextActive: { color: c.onBrandPrimary },
+  spoilerToggle: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md },
+  spoilerCopy: { flex: 1 },
+  spoilerTitle: { fontFamily: "Nunito", fontSize: 14, fontWeight: "700", color: c.onSurface },
+  spoilerHint: { fontFamily: "Nunito", fontSize: 12, color: c.muted },
   pickRow: { flexDirection: "row", gap: spacing.md },
   snapButton: { flex: 1, flexDirection: "row", gap: spacing.sm, alignItems: "center", justifyContent: "center", paddingVertical: spacing.lg, borderRadius: radius.md, backgroundColor: c.brandPrimary },
   snapText: { fontFamily: "Nunito", fontSize: 15, fontWeight: "700", color: c.onBrandPrimary },
